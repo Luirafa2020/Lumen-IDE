@@ -1,4 +1,3 @@
-// /renderer.js
 let monaco;
 let editor;
 let currentEditorModel = null;
@@ -529,45 +528,133 @@ function showConfirmDialog(message) {
     });
 }
 
-function showContextMenu(event, type, item) { contextMenuElement.innerHTML = ''; const menuItems = document.createElement('ul'); if (type === 'tree-item' && item && item.path) { contextMenuTarget = item.path; const isDirectory = item.isDirectory === 'true' || item.isDirectory === true; if (isDirectory) { menuItems.appendChild(createMenuItem('Novo Arquivo...', 'new-file')); menuItems.appendChild(createMenuItem('Nova Pasta...', 'new-folder')); menuItems.appendChild(createMenuItem('---')); } menuItems.appendChild(createMenuItem('Renomear...', 'rename')); menuItems.appendChild(createMenuItem('Excluir', 'delete')); } else if (type === 'tree-empty' && currentFolderPath) { contextMenuTarget = currentFolderPath; menuItems.appendChild(createMenuItem('Novo Arquivo...', 'new-file')); menuItems.appendChild(createMenuItem('Nova Pasta...', 'new-folder')); } else { return; } menuItems.appendChild(createMenuItem('---')); menuItems.appendChild(createMenuItem('Recarregar Pasta Pai', 'refresh-parent')); if (menuItems.children.length > 0) { contextMenuElement.appendChild(menuItems); } else return; contextMenuElement.style.left = `${event.clientX}px`; contextMenuElement.style.top = `${event.clientY}px`; contextMenuElement.style.display = 'block'; const closeMenuHandler = (e) => { if (!contextMenuElement.contains(e.target)) { hideContextMenu(); document.removeEventListener('click', closeMenuHandler, true); document.removeEventListener('contextmenu', closeMenuHandler, true); } }; setTimeout(() => { document.addEventListener('click', closeMenuHandler, true); document.addEventListener('contextmenu', closeMenuHandler, true); }, 50); }
+function showContextMenu(event, type, item) {
+    contextMenuElement.innerHTML = '';
+    const menuItems = document.createElement('ul');
+    let targetPathForMenu = null;
+
+    if (type === 'tree-item' && item && item.path) {
+        contextMenuTarget = item.path;
+        targetPathForMenu = item.path;
+        const isDirectory = item.isDirectory === 'true' || item.isDirectory === true;
+
+        if (isDirectory) {
+            menuItems.appendChild(createMenuItem('Novo Arquivo...', 'new-file'));
+            menuItems.appendChild(createMenuItem('Nova Pasta...', 'new-folder'));
+            menuItems.appendChild(createMenuItem('---'));
+        }
+        menuItems.appendChild(createMenuItem('Renomear...', 'rename'));
+        menuItems.appendChild(createMenuItem('Excluir', 'delete'));
+        menuItems.appendChild(createMenuItem('---'));
+
+        menuItems.appendChild(createMenuItem('Copiar Caminho', 'copy-path'));
+        if (currentFolderPath) {
+             menuItems.appendChild(createMenuItem('Copiar Caminho Relativo', 'copy-relative-path'));
+        }
+        menuItems.appendChild(createMenuItem('---'));
+
+    } else if (type === 'tree-empty' && currentFolderPath) {
+        contextMenuTarget = currentFolderPath;
+        targetPathForMenu = currentFolderPath;
+
+        menuItems.appendChild(createMenuItem('Novo Arquivo...', 'new-file'));
+        menuItems.appendChild(createMenuItem('Nova Pasta...', 'new-folder'));
+         menuItems.appendChild(createMenuItem('---'));
+         menuItems.appendChild(createMenuItem('Copiar Caminho', 'copy-path'));
+
+    } else {
+        return;
+    }
+
+    if (currentFolderPath) {
+         menuItems.appendChild(createMenuItem('Recarregar Pasta Pai', 'refresh-parent'));
+    }
+
+
+    if (menuItems.children.length > 0) {
+        contextMenuElement.appendChild(menuItems);
+    } else {
+        return;
+    }
+
+
+    contextMenuElement.style.left = `${event.clientX}px`;
+    contextMenuElement.style.top = `${event.clientY}px`;
+    contextMenuElement.style.display = 'block';
+
+    const closeMenuHandler = (e) => {
+        if (!contextMenuElement.contains(e.target)) {
+            hideContextMenu();
+            document.removeEventListener('click', closeMenuHandler, true);
+            document.removeEventListener('contextmenu', closeMenuHandler, true);
+        }
+    };
+    setTimeout(() => {
+        document.addEventListener('click', closeMenuHandler, true);
+        document.addEventListener('contextmenu', closeMenuHandler, true);
+    }, 50);
+}
+
 function hideContextMenu() { contextMenuElement.style.display = 'none'; contextMenuTarget = null; }
 function createMenuItem(label, command, disabled = false) { const li = document.createElement('li'); li.setAttribute('role', 'menuitem'); if (label === '---') { li.className = 'separator'; li.setAttribute('aria-hidden', 'true'); return li; } li.textContent = label; if (disabled) { li.classList.add('disabled'); li.setAttribute('aria-disabled', 'true'); } else { li.dataset.command = command; li.setAttribute('tabindex', '-1'); li.addEventListener('click', () => { if (contextMenuTarget !== null || ['refresh-parent'].includes(command)) { handleContextMenuCommand(command, contextMenuTarget); } hideContextMenu(); }); } return li; }
 
 async function handleContextMenuCommand(command, targetPath) {
     console.log(`Context menu command received: ${command}, Target: ${targetPath}`);
-    if (!targetPath && !['refresh-parent'].includes(command)) { showNativeErrorDialog('Erro', 'Alvo inválido ou nenhuma pasta aberta.'); return; }
+
+    if (command === 'refresh-parent') {
+         let dirToRefreshParent = currentFolderPath;
+         if (targetPath && targetPath !== currentFolderPath && targetPath.includes(pathSeparator)) {
+             dirToRefreshParent = targetPath.substring(0, targetPath.lastIndexOf(pathSeparator)) || currentFolderPath;
+         }
+         console.log(`[Renderer] Refreshing parent directory: ${dirToRefreshParent}`);
+         refreshSubTree(dirToRefreshParent);
+         return;
+    }
+
+    if (!targetPath && command !== 'copy-path' && command !== 'copy-relative-path') {
+         showNativeErrorDialog('Erro', 'Alvo inválido ou nenhuma pasta aberta.');
+         return;
+    }
+    if (!currentFolderPath && !['copy-path', 'copy-relative-path'].includes(command)) {
+         showNativeErrorDialog('Erro', 'Nenhuma Pasta Aberta.');
+         return;
+    }
+
     let parentDirForAction = targetPath;
     let targetName = targetPath ? getFileName(targetPath) : 'raiz';
     let isTargetDirectory = false;
     const targetElement = targetPath ? fileTreeElement.querySelector(`li[data-file-path="${CSS.escape(targetPath)}"]`) : null;
-    let dirToRefresh = currentFolderPath;
+    let dirToRefreshAfterAction = currentFolderPath;
+
     if (targetElement) {
         isTargetDirectory = targetElement.dataset.isDirectory === 'true';
         parentDirForAction = targetPath.includes(pathSeparator) ? targetPath.substring(0, targetPath.lastIndexOf(pathSeparator)) : currentFolderPath;
         if (['new-file', 'new-folder'].includes(command) && isTargetDirectory) {
             parentDirForAction = targetPath;
         }
-         dirToRefresh = (['new-file', 'new-folder'].includes(command) && isTargetDirectory) ? targetPath : parentDirForAction;
-    } else if (targetPath === currentFolderPath && ['new-file', 'new-folder', 'refresh-parent'].includes(command)) {
+         dirToRefreshAfterAction = (['new-file', 'new-folder'].includes(command) && isTargetDirectory) ? targetPath : parentDirForAction;
+    } else if (targetPath === currentFolderPath && ['new-file', 'new-folder'].includes(command)) {
         isTargetDirectory = true;
         parentDirForAction = currentFolderPath;
         targetName = getFileName(currentFolderPath) || 'Raiz';
-        dirToRefresh = currentFolderPath;
-    } else if (command === 'refresh-parent') {
-         if (!targetPath || targetPath === currentFolderPath) dirToRefresh = currentFolderPath;
-         else dirToRefresh = targetPath.includes(pathSeparator) ? targetPath.substring(0, targetPath.lastIndexOf(pathSeparator)) : currentFolderPath;
-         parentDirForAction = dirToRefresh;
-    } else {
-        showNativeErrorDialog('Erro', `Alvo Inválido: "${targetPath}"`);
-        return;
+        dirToRefreshAfterAction = currentFolderPath;
+    } else if (!targetPath && (command === 'copy-path' || command === 'copy-relative-path')) {
+        targetPath = currentFolderPath;
+        targetName = getFileName(currentFolderPath) || 'Raiz';
+        isTargetDirectory = true;
+        parentDirForAction = currentFolderPath;
+        dirToRefreshAfterAction = currentFolderPath;
+    } else if (!targetElement && !['new-file', 'new-folder', 'copy-path', 'copy-relative-path'].includes(command)) {
+         showNativeErrorDialog('Erro', `Alvo Inválido ou Desatualizado: "${targetPath}"`);
+         return;
     }
-    if (!dirToRefresh || dirToRefresh === '') dirToRefresh = currentFolderPath;
+
+
+    if (!dirToRefreshAfterAction || dirToRefreshAfterAction === '') dirToRefreshAfterAction = currentFolderPath;
     if (!parentDirForAction || parentDirForAction === '') parentDirForAction = currentFolderPath;
-    if (!currentFolderPath && command !== 'refresh-parent') {
-        showNativeErrorDialog('Erro', 'Nenhuma Pasta Aberta.');
-        return;
-    }
-    console.log(`Determined - Action Parent Dir: ${parentDirForAction}, Dir to Refresh: ${dirToRefresh}, Target Name: ${targetName}, Is Directory: ${isTargetDirectory}`);
+
+    console.log(`Determined - Action Parent Dir: ${parentDirForAction}, Dir to Refresh: ${dirToRefreshAfterAction}, Target Path: ${targetPath}, Target Name: ${targetName}, Is Directory: ${isTargetDirectory}`);
+
     try {
         let result;
         switch (command) {
@@ -577,7 +664,7 @@ async function handleContextMenuCommand(command, targetPath) {
                     const newFilePath = parentDirForAction + pathSeparator + newFileName.trim();
                     result = await window.electronAPI.createFile(newFilePath);
                     if (result.error) throw new Error(result.error);
-                    refreshSubTree(dirToRefresh);
+                    refreshSubTree(dirToRefreshAfterAction);
                     if (isEditableTextFile(newFilePath) || isSupportedImageView(newFilePath)) {
                        await openFile(newFilePath);
                     }
@@ -589,44 +676,80 @@ async function handleContextMenuCommand(command, targetPath) {
                     const newDirPath = parentDirForAction + pathSeparator + newFolderName.trim();
                     result = await window.electronAPI.createDirectory(newDirPath);
                     if (result.error) throw new Error(result.error);
-                    refreshSubTree(dirToRefresh);
+                    refreshSubTree(dirToRefreshAfterAction);
                 } else { console.log("[handleContextMenuCommand] Folder creation skipped (dialog cancelled)."); }
                 break;
             case 'rename':
-                 const actualParentDir = targetPath.substring(0, targetPath.lastIndexOf(pathSeparator)) || currentFolderPath;
-                 dirToRefresh = actualParentDir || currentFolderPath;
+                 const actualParentDirRename = targetPath.substring(0, targetPath.lastIndexOf(pathSeparator)) || currentFolderPath;
+                 dirToRefreshAfterAction = actualParentDirRename || currentFolderPath;
                  const newName = await showInputDialog(`Renomear "${targetName}":`, targetName);
                  if (newName?.trim() && newName.trim() !== targetName) {
-                     const newPath = actualParentDir + pathSeparator + newName.trim();
+                     const newPath = actualParentDirRename + pathSeparator + newName.trim();
                      result = await window.electronAPI.renamePath(targetPath, newPath);
                      if (result.error) throw new Error(result.error);
                      await updateStateForRename(targetPath, newPath);
-                     refreshSubTree(dirToRefresh);
+                     refreshSubTree(dirToRefreshAfterAction);
                  } else { console.log("[handleContextMenuCommand] Rename skipped (dialog cancelled or name unchanged)."); }
                  break;
             case 'delete':
                  const confirmDelete = await showConfirmDialog(`Tem certeza que deseja excluir ${isTargetDirectory ? 'pasta' : 'arquivo'} "${targetName}"?\nEsta ação NÃO pode ser desfeita!`);
                  if (confirmDelete) {
                     const actualParentDirDel = targetPath.substring(0, targetPath.lastIndexOf(pathSeparator)) || currentFolderPath;
-                    dirToRefresh = actualParentDirDel || currentFolderPath;
+                    dirToRefreshAfterAction = actualParentDirDel || currentFolderPath;
                     await closeTabsForPath(targetPath, isTargetDirectory);
                     result = await window.electronAPI.deletePath(targetPath);
                     if (result.error) throw new Error(result.error);
-                    refreshSubTree(dirToRefresh);
+                    refreshSubTree(dirToRefreshAfterAction);
                 } else { console.log("[handleContextMenuCommand] Deletion cancelled by user."); }
                 break;
-            case 'refresh-parent':
-                console.log(`[Renderer] Refreshing parent directory: ${dirToRefresh}`);
-                refreshSubTree(dirToRefresh);
+
+            case 'copy-path':
+                if (!targetPath) { throw new Error("Nenhum caminho de destino especificado para copiar."); }
+                console.log(`Copiando caminho absoluto: ${targetPath}`);
+                result = await window.electronAPI.writeToClipboard(targetPath);
+                if (!result || !result.success) { throw new Error(result.error || "Falha ao copiar para a área de transferência."); }
+                console.log("Caminho absoluto copiado.");
                 break;
-            default: console.warn(`Comando de menu não implementado: ${command}`);
+
+            case 'copy-relative-path':
+                if (!targetPath) { throw new Error("Nenhum caminho de destino especificado para copiar."); }
+                if (!currentFolderPath) { throw new Error("Nenhuma pasta raiz aberta para calcular o caminho relativo."); }
+
+                let relativePath = targetPath;
+
+                const normalizedTargetPath = targetPath.replace(/\\/g, pathSeparator);
+                const normalizedCurrentFolder = currentFolderPath.replace(/\\/g, pathSeparator);
+
+                if (normalizedTargetPath.startsWith(normalizedCurrentFolder)) {
+                    relativePath = normalizedTargetPath.substring(normalizedCurrentFolder.length);
+                    if (relativePath.startsWith(pathSeparator)) {
+                        relativePath = relativePath.substring(pathSeparator.length);
+                    }
+                    if (relativePath === '') {
+                        relativePath = '.';
+                    }
+                } else {
+                     console.warn(`[handleContextMenuCommand] Caminho de destino (${targetPath}) não começa com a pasta atual (${currentFolderPath}). Não foi possível calcular o caminho relativo corretamente. Copiando caminho absoluto como fallback.`);
+                }
+
+                console.log(`Copiando caminho relativo: ${relativePath}`);
+                result = await window.electronAPI.writeToClipboard(relativePath);
+                 if (!result || !result.success) { throw new Error(result.error || "Falha ao copiar para a área de transferência."); }
+                 console.log("Caminho relativo copiado.");
+                break;
+
+            default:
+                console.warn(`Comando de menu não implementado: ${command}`);
         }
     } catch (error) {
         console.error(`[Renderer] Erro ao executar comando '${command}' em '${targetPath || 'raiz'}':`, error);
         showNativeErrorDialog(`Erro - ${command}`, `Falha ao executar operação: ${error.message}`);
-        refreshSubTree(dirToRefresh);
+        if (['new-file', 'new-folder', 'rename', 'delete'].includes(command)) {
+            refreshSubTree(dirToRefreshAfterAction);
+        }
     }
 }
+
 
 async function updateStateForRename(oldPath, newPath) {
     const isDirectory = !(oldPath.includes('.') || newPath.includes('.'));

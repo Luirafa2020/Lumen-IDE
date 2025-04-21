@@ -1,22 +1,20 @@
-// main.js (Com Live Server Integrado)
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
-const fsSync = require('fs'); // Need sync version for injection check potentially
+const fsSync = require('fs');
 const os = require('os');
 const { spawn } = require('child_process');
 const http = require('http');
 const chokidar = require('chokidar');
 const WebSocket = require('ws');
-const mime = require('mime-types'); // Import mime-types
+const mime = require('mime-types');
 
 let mainWindow;
 const SUPPORTED_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico'];
 const SVG_EXTENSION = '.svg';
-const DEFAULT_LIVE_SERVER_PORT = 5500; // Default port
-const IGNORED_DIRS_WATCH = ['node_modules', '.git', '.vscode', 'dist', 'build']; // For file watcher
+const DEFAULT_LIVE_SERVER_PORT = 5500;
+const IGNORED_DIRS_WATCH = ['node_modules', '.git', '.vscode', 'dist', 'build'];
 
-// --- Live Server State ---
 let liveHttpServer = null;
 let liveWebSocketServer = null;
 let liveFileWatcher = null;
@@ -37,58 +35,50 @@ function createWindow() {
         icon: path.join(__dirname, 'logo.png')
     });
     mainWindow.loadFile('index.html');
-    // mainWindow.webContents.openDevTools();
     mainWindow.on('closed', () => { mainWindow = null; });
 
-    // Ensure server stops if window is closed unexpectedly
     mainWindow.on('close', async (e) => {
         if (liveHttpServer) {
             console.log("Window closing, stopping live server...");
-            await stopLiveServer(); // Ensure cleanup
+            await stopLiveServer();
         }
     });
 }
 
-// --- Helper: Find Available Port ---
 async function findAvailablePort(startPort) {
     let port = startPort;
     while (true) {
         try {
             await new Promise((resolve, reject) => {
                 const server = http.createServer();
-                server.listen(port, '127.0.0.1', () => { // Listen only on localhost
+                server.listen(port, '127.0.0.1', () => {
                     server.close(resolve);
                 });
                 server.on('error', (err) => {
                     if (err.code === 'EADDRINUSE') {
-                        reject(err); // Port is busy
+                        reject(err);
                     } else {
-                        reject(err); // Other error
+                        reject(err);
                     }
                 });
             });
-            return port; // Found available port
+            return port;
         } catch (error) {
             if (error.code === 'EADDRINUSE') {
                 console.log(`Port ${port} in use, trying next...`);
                 port++;
-                if (port > startPort + 100) { // Limit search range
+                if (port > startPort + 100) {
                     throw new Error("Could not find an available port after 100 tries.");
                 }
             } else {
-                throw error; // Rethrow other errors
+                throw error;
             }
         }
     }
 }
 
-
-// --- Live Server Core Functions ---
-
-// Injects the WebSocket client script into HTML content
 function injectWebSocketClient(htmlContent, wsPort) {
     const script = `
-<!-- Live Reload Script Injected by Lumen IDE -->
 <script>
     (function() {
         const socket = new WebSocket('ws://localhost:${wsPort}');
@@ -111,24 +101,19 @@ function injectWebSocketClient(htmlContent, wsPort) {
         socket.onclose = () => console.log('[Lumen Live Reload] Connection closed.');
     })();
 </script>
-</body>`; // Target the closing body tag
-    // Ensure we inject just before the closing body tag
+</body>`;
     const bodyEndIndex = htmlContent.lastIndexOf('</body>');
     if (bodyEndIndex !== -1) {
         return htmlContent.slice(0, bodyEndIndex) + script + htmlContent.slice(bodyEndIndex);
     } else {
-        // Fallback: append if no body tag found (less ideal)
         return htmlContent + script.replace('</body>','');
     }
 }
 
-
-// Handles HTTP requests for the live server
 async function handleLiveServerRequest(req, res, folderPath, wsPort) {
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
     let filePath = path.join(folderPath, decodeURIComponent(requestUrl.pathname));
 
-    // Security: Prevent directory traversal
     if (!filePath.startsWith(folderPath)) {
         console.warn(`[LiveServer] Blocked path traversal attempt: ${requestUrl.pathname}`);
         res.writeHead(403, { 'Content-Type': 'text/plain' });
@@ -140,9 +125,7 @@ async function handleLiveServerRequest(req, res, folderPath, wsPort) {
         const stats = await fs.stat(filePath);
 
         if (stats.isDirectory()) {
-            // If directory, try serving index.html
             filePath = path.join(filePath, 'index.html');
-            // Check if index.html exists inside
             try {
                  await fs.access(filePath, fsSync.constants.R_OK);
             } catch (indexErr) {
@@ -153,16 +136,14 @@ async function handleLiveServerRequest(req, res, folderPath, wsPort) {
             }
         }
 
-        // Read the file
         let fileContent = await fs.readFile(filePath);
         const contentType = mime.lookup(filePath) || 'application/octet-stream';
 
         res.writeHead(200, {
             'Content-Type': contentType,
-            'Cache-Control': 'no-cache' // Prevent browser caching during dev
+            'Cache-Control': 'no-cache'
         });
 
-        // Inject script ONLY for HTML files
         if (contentType === 'text/html') {
             fileContent = injectWebSocketClient(fileContent.toString('utf-8'), wsPort);
         }
@@ -183,12 +164,10 @@ async function handleLiveServerRequest(req, res, folderPath, wsPort) {
     }
 }
 
-// Broadcasts messages to all connected WebSocket clients
 function broadcastToWebSockets(message) {
     if (!liveWebSocketServer || liveWebSocketClients.size === 0) {
         return;
     }
-    // console.log(`[LiveServer WS] Broadcasting: ${message}`);
     liveWebSocketClients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(message);
@@ -196,7 +175,6 @@ function broadcastToWebSockets(message) {
     });
 }
 
-// Starts the HTTP Server, WebSocket Server, and File Watcher
 async function startLiveServer(folderPath) {
     if (liveHttpServer) {
         console.warn("[LiveServer] Server already running.");
@@ -209,7 +187,7 @@ async function startLiveServer(folderPath) {
     try {
         liveServerFolderPath = folderPath;
         liveServerPort = await findAvailablePort(DEFAULT_LIVE_SERVER_PORT);
-        const wsPort = liveServerPort; // Use the same port for simplicity, WS upgrades HTTP
+        const wsPort = liveServerPort;
 
         liveHttpServer = http.createServer((req, res) =>
             handleLiveServerRequest(req, res, liveServerFolderPath, wsPort)
@@ -226,27 +204,24 @@ async function startLiveServer(folderPath) {
             });
             ws.on('error', (error) => {
                 console.error('[LiveServer WS] Client error:', error);
-                liveWebSocketClients.delete(ws); // Clean up on error
+                liveWebSocketClients.delete(ws);
             });
         });
 
         liveWebSocketServer.on('error', (error) => {
             console.error('[LiveServer WS] Server error:', error);
-            // Attempt cleanup if WS server fails critically
             stopLiveServer().catch(e => console.error("Error stopping server after WS error:", e));
             sendLiveServerStatusUpdate(false, null, `WebSocket server error: ${error.message}`);
         });
 
-        // Setup File Watcher
         liveFileWatcher = chokidar.watch(liveServerFolderPath, {
             ignored: (pathString) => {
-                // Ignore dotfiles/dotfolders and common build/dependency directories
                 const base = path.basename(pathString);
                 return base.startsWith('.') || IGNORED_DIRS_WATCH.some(dir => pathString.includes(path.sep + dir + path.sep) || base === dir);
             },
-            ignoreInitial: true, // Don't trigger on initial scan
+            ignoreInitial: true,
             persistent: true,
-            depth: 99 // Reasonably deep watch
+            depth: 99
         });
 
         liveFileWatcher
@@ -255,9 +230,9 @@ async function startLiveServer(folderPath) {
                 const ext = path.extname(filePath).toLowerCase();
                 console.log(`[Watcher] File changed: ${path.basename(filePath)}`);
                 if (ext === '.css') {
-                    broadcastToWebSockets('refreshcss'); // Specific command for CSS
+                    broadcastToWebSockets('refreshcss');
                 } else {
-                    broadcastToWebSockets('reload'); // General reload for HTML, JS, etc.
+                    broadcastToWebSockets('reload');
                 }
              })
             .on('unlink', (filePath) => { console.log(`[Watcher] File removed: ${path.basename(filePath)}`); broadcastToWebSockets('reload'); })
@@ -272,7 +247,7 @@ async function startLiveServer(folderPath) {
             });
             liveHttpServer.on('error', (err) => {
                 console.error("[LiveServer] HTTP server error:", err);
-                reject(err); // Reject the promise on error
+                reject(err);
             });
         });
 
@@ -281,13 +256,12 @@ async function startLiveServer(folderPath) {
 
     } catch (error) {
         console.error("[LiveServer] Failed to start:", error);
-        await stopLiveServer(); // Ensure cleanup on failure
+        await stopLiveServer();
         sendLiveServerStatusUpdate(false, null, null, `Failed to start: ${error.message}`);
         return { success: false, error: `Failed to start live server: ${error.message}` };
     }
 }
 
-// Stops the servers and watcher
 async function stopLiveServer() {
     let stopped = false;
     console.log("[LiveServer] Attempting to stop...");
@@ -303,11 +277,10 @@ async function stopLiveServer() {
         }
     }
 
-    // Close WebSocket clients before server
     if (liveWebSocketClients.size > 0) {
          console.log(`[LiveServer WS] Closing ${liveWebSocketClients.size} client connections...`);
          liveWebSocketClients.forEach(client => {
-             client.terminate(); // Force close connections
+             client.terminate();
          });
          liveWebSocketClients.clear();
     }
@@ -328,12 +301,11 @@ async function stopLiveServer() {
              liveHttpServer.close((err) => {
                  if (err) {
                      console.error("[LiveServer] Error closing HTTP server:", err);
-                     // Don't reject here, we want to continue cleanup
                  } else {
                      console.log("[LiveServer] HTTP server closed.");
                      stopped = true;
                  }
-                 liveHttpServer = null; // Nullify even if error closing
+                 liveHttpServer = null;
                  resolve();
              });
         });
@@ -344,17 +316,15 @@ async function stopLiveServer() {
         const oldPort = liveServerPort;
         liveServerPort = null;
         liveServerFolderPath = null;
-        sendLiveServerStatusUpdate(false, oldPort); // Send update that it stopped
+        sendLiveServerStatusUpdate(false, oldPort);
     } else {
         console.warn("[LiveServer] Stop called but nothing seemed to be running.");
     }
-     // Always clear clients just in case
     liveWebSocketClients.clear();
 
     return { success: true };
 }
 
-// Helper to send status updates to renderer
 function sendLiveServerStatusUpdate(isRunning, port, folderPath, error = null) {
      if (mainWindow && !mainWindow.isDestroyed()) {
          mainWindow.webContents.send('live-server:statusUpdate', {
@@ -365,8 +335,6 @@ function sendLiveServerStatusUpdate(isRunning, port, folderPath, error = null) {
          });
      }
 }
-
-// --- IPC Handlers ---
 
 ipcMain.handle('dialog:openDirectory', async () => { if (!mainWindow) return null; const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] }); if (!canceled && filePaths.length > 0) { return filePaths[0]; } return null; });
 ipcMain.handle('fs:readDirectory', async (event, dirPath) => { try { const dirents = await fs.readdir(dirPath, { withFileTypes: true }); return dirents.map(dirent => ({ name: dirent.name, isDirectory: dirent.isDirectory(), isFile: dirent.isFile(), path: path.join(dirPath, dirent.name) })).sort((a, b) => { if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1; return a.name.localeCompare(b.name); }); } catch (error) { console.error(`Erro ao ler diretório [${dirPath}]:`, error); return { error: `Não foi possível ler o diretório '${path.basename(dirPath)}': ${error.code || error.message}` }; } });
@@ -380,7 +348,22 @@ ipcMain.handle('search:inProject', async (event, { searchTerm, folderPath, ignor
 ipcMain.on('command:run', (event, { command, cwd }) => { if (!mainWindow || mainWindow.isDestroyed()) return; if (!command || !cwd) { mainWindow.webContents.send('command:error', 'Comando ou diretório inválido.'); mainWindow.webContents.send('command:exit', 1); return; } console.log(`Executando comando: [${command}] em [${cwd}]`); mainWindow.webContents.send('command:start', command); const isWindows = os.platform() === 'win32'; const shell = isWindows ? 'cmd.exe' : '/bin/sh'; const args = isWindows ? ['/c', command] : ['-c', command]; try { const child = spawn(shell, args, { cwd: cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env: { ...process.env }, detached: false }); const sendToRenderer = (channel, data) => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.webContents.send(channel, data); } }; child.stdout.on('data', (data) => sendToRenderer('command:output', data.toString())); child.stderr.on('data', (data) => sendToRenderer('command:output', `[STDERR] ${data.toString()}`)); child.on('close', (code) => { console.log(`Comando [${command}] finalizado com código: ${code}`); sendToRenderer('command:exit', code ?? 1); }); child.on('error', (error) => { console.error(`Erro ao spawn do comando [${command}]:`, error); sendToRenderer('command:error', `Falha ao iniciar comando: ${error.message}`); sendToRenderer('command:exit', 1); }); } catch (spawnError) { console.error(`Erro CATCH ao tentar spawn [${command}]:`, spawnError); if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.webContents.send('command:error', `Erro ao tentar executar: ${spawnError.message}`); mainWindow.webContents.send('command:exit', 1); } } });
 ipcMain.on('dialog:showErrorBox', (event, title, content) => { if (mainWindow && !mainWindow.isDestroyed()) { dialog.showErrorBox(title || 'Erro', content || 'Ocorreu um erro inesperado.'); } });
 
-// --- NEW: Live Server IPC Handlers ---
+ipcMain.handle('clipboard:writeText', async (event, textToWrite) => {
+    if (typeof textToWrite === 'string') {
+        try {
+            clipboard.writeText(textToWrite);
+            console.log('[Clipboard] Text written successfully.');
+            return { success: true };
+        } catch (error) {
+            console.error('[Clipboard] Error writing text:', error);
+            return { success: false, error: 'Failed to write to clipboard.' };
+        }
+    } else {
+        console.warn('[Clipboard] Invalid text provided to writeText handler.');
+        return { success: false, error: 'Invalid text provided.' };
+    }
+});
+
 ipcMain.handle('live-server:start', async (event, folderPath) => {
     return await startLiveServer(folderPath);
 });
@@ -397,34 +380,28 @@ ipcMain.handle('live-server:getStatus', () => {
     };
 });
 
-
-// --- Ciclo de Vida ---
 app.whenReady().then(() => {
     createWindow();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
 app.on('window-all-closed', () => {
-    // Stop server before quitting if on non-macOS
     if (process.platform !== 'darwin') {
         stopLiveServer().then(() => app.quit()).catch(() => app.quit());
     } else {
-         // On macOS, stopping might not be necessary if app just hides
-         // but we should ensure it stops if the app truly quits
     }
 });
 
-// Ensure server stops cleanly on quit
 app.on('will-quit', async (event) => {
     if (liveHttpServer) {
         console.log("App quitting, ensuring live server stops...");
-        event.preventDefault(); // Prevent immediate quit
+        event.preventDefault();
         try {
             await stopLiveServer();
         } catch (err) {
             console.error("Error stopping live server during quit:", err);
         } finally {
-            app.quit(); // Resume quitting
+            app.quit();
         }
     }
 });
