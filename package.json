@@ -1,0 +1,29 @@
+{
+  "name": "lumen-ide",
+  "version": "0.3.0",
+  "description": "Lumen IDE - Uma IDE leve para desenvolvimento web com Electron",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [
+    "IDE",
+    "Electron",
+    "web",
+    "development",
+    "lumen",
+    "editor"
+  ],
+  "author": "Seu Nome",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.1.0"
+  },
+  "dependencies": {
+    "@mdi/font": "^7.4.47",
+    "chokidar": "^4.0.3",
+    "mime-types": "^3.0.1",
+    "monaco-editor": "^0.45.0",
+    "ws": "^8.18.1"
+  }
+}

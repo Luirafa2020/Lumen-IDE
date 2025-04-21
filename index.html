@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <!-- IMPORTANT: Added ws://localhost:* to connect-src and 'unsafe-inline' to script-src for the live reload script -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' ws://localhost:*; img-src 'self' data:;">
+    <title>Lumen IDE</title>
+    <link rel="stylesheet" data-name="vs/editor/editor.main" href="node_modules/monaco-editor/min/vs/editor/editor.main.css">
+    <link rel="stylesheet" href="node_modules/@mdi/font/css/materialdesignicons.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- === Sidebar (Esquerda) === -->
+        <div id="sidebar">
+            <div class="sidebar-header">
+                <button id="open-folder-btn" title="Abrir Pasta (Ctrl+O)">Abrir Pasta</button>
+                <div class="sidebar-actions">
+                    <button id="new-file-btn" title="Novo Arquivo na Raiz" disabled>Novo Arquivo</button> <!-- Começa desabilitado -->
+                    <button id="new-folder-btn" title="Nova Pasta na Raiz" disabled>Nova Pasta</button> <!-- Começa desabilitado -->
+                </div>
+                <div id="current-folder" title="Nenhuma pasta aberta">Nenhuma pasta aberta</div>
+            </div>
+            <div class="sidebar-tabs">
+                <button class="sidebar-tab-btn active" data-target="file-tree-panel" title="Explorador de Arquivos (Ctrl+Shift+E)">Arquivos</button>
+                <button class="sidebar-tab-btn" data-target="search-panel" title="Pesquisar no Projeto (Ctrl+Shift+F)">Pesquisar</button>
+            </div>
+            <div id="file-tree-panel" class="sidebar-panel active">
+                <ul id="file-tree">
+                    <li class="placeholder">Abra uma pasta para ver os arquivos.</li>
+                </ul>
+            </div>
+            <div id="search-panel" class="sidebar-panel">
+                <div class="search-input-container">
+                    <input type="text" id="search-input" placeholder="Pesquisar no projeto..." aria-label="Termo de pesquisa">
+                    <button id="search-button" title="Iniciar Pesquisa (Enter)">Buscar</button>
+                </div>
+                <div id="search-results-container">
+                     <div id="search-status"></div>
+                    <ul id="search-results" aria-live="polite"></ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- === Conteúdo Principal (Direita) === -->
+        <div id="main-content">
+            <div id="editor-tabs-container" role="tablist" aria-label="Abas de arquivos abertos"></div>
+            <div id="content-viewer-container" role="main" style="flex-grow: 1; overflow: hidden; position: relative;">
+                <div id="editor-container" style="height: 100%;">
+                    <div id="editor-placeholder">
+                        <img src="logo.png" alt="Lumen IDE Logo" width="100">
+                        <h1>Lumen IDE</h1>
+                        <p>Abra uma pasta (<code>Ctrl+O</code>) ou<br>crie um novo arquivo (botões ou clique direito).</p>
+                    </div>
+                </div>
+                <div id="image-viewer-container" style="display: none;">
+                     <div id="image-viewer-controls">
+                         <button id="svg-toggle-view-btn" style="display: none;">Ver Código Fonte</button>
+                     </div>
+                    <img id="image-viewer-img" src="" alt="Visualização de Imagem">
+                    <div id="image-viewer-error" style="display: none;"></div>
+                </div>
+            </div>
+            <div id="status-bar">
+                <div class="status-left">
+                    <span id="current-file-info" aria-live="polite">Nenhum arquivo aberto</span>
+                    <span id="cursor-position"></span>
+                    <span id="image-dimensions" style="margin-left: 15px;"></span>
+                    <!-- NEW: Live Server Status -->
+                    <span id="live-server-status" style="margin-left: 15px;"></span>
+                </div>
+                <div class="status-right">
+                     <span id="save-status" aria-live="polite"></span>
+                     <!-- NEW: Live Server Button -->
+                     <button id="live-server-btn" class="status-bar-button" title="Iniciar Live Server (Requer pasta aberta)" disabled>
+                         <i class="mdi mdi-play-circle-outline"></i> Go Live
+                     </button>
+                     <button id="toggle-command-panel-btn" class="status-bar-button" title="Alternar Painel de Comando (Ctrl+`)">
+                         <i class="mdi mdi-console"></i> Comando
+                     </button>
+                </div>
+            </div>
+            <div id="command-panel">
+                 <div id="command-output-container" aria-live="polite" aria-atomic="false">
+                     <pre id="command-output" tabindex="0"></pre>
+                 </div>
+                 <div id="command-input-container">
+                     <label for="command-input" class="command-prompt">></label>
+                     <input type="text" id="command-input" placeholder="Digite um comando e pressione Enter..." aria-label="Entrada de comando">
+                 </div>
+                 <button id="close-command-panel-btn" title="Fechar Painel de Comando" aria-label="Fechar Painel de Comando">×</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Menu de Contexto -->
+    <div id="context-menu" class="context-menu" role="menu"></div>
+
+    <!-- *** Modal de Input *** -->
+    <div id="input-dialog-overlay" class="dialog-overlay" style="display: none;">
+        <div id="input-dialog" class="dialog-box" role="dialog" aria-modal="true" aria-labelledby="input-dialog-label">
+            <label id="input-dialog-label" for="input-dialog-input">Label:</label>
+            <input type="text" id="input-dialog-input">
+            <div class="dialog-buttons">
+                <button id="input-dialog-cancel" class="dialog-button-secondary">Cancelar</button>
+                <button id="input-dialog-ok" class="dialog-button-primary">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- *** Modal de Confirmação *** -->
+    <div id="confirm-dialog-overlay" class="dialog-overlay" style="display: none;">
+        <div id="confirm-dialog" class="dialog-box" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-message">
+            <!-- <h2 id="confirm-dialog-title">Confirmação</h2> --> <!-- Título opcional -->
+            <p id="confirm-dialog-message">Mensagem de confirmação aqui.</p>
+            <div class="dialog-buttons">
+                <button id="confirm-dialog-cancel" class="dialog-button-secondary">Cancelar</button>
+                <button id="confirm-dialog-ok" class="dialog-button-primary">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="./renderer.js"></script>
+</body>
+</html>
