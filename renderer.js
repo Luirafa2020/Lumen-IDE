@@ -1,4 +1,4 @@
-// renderer.js
+// /renderer.js
 let monaco;
 let editor;
 let currentEditorModel = null;
@@ -18,6 +18,8 @@ let isLiveServerRunning = false;
 let currentLiveServerPort = null;
 let currentLiveServerFolder = null;
 
+let allProblems = new Map();
+let problemsMarkerListener = null;
 
 const sidebarElement = document.getElementById('sidebar');
 const openFolderBtn = document.getElementById('open-folder-btn');
@@ -64,10 +66,13 @@ const confirmDialogMessage = document.getElementById('confirm-dialog-message');
 const confirmDialogOkBtn = document.getElementById('confirm-dialog-ok');
 const confirmDialogCancelBtn = document.getElementById('confirm-dialog-cancel');
 
-
 const liveServerBtn = document.getElementById('live-server-btn');
 const liveServerStatusElement = document.getElementById('live-server-status');
 
+const problemsPanel = document.getElementById('problems-panel');
+const problemsListElement = document.getElementById('problems-list');
+const problemsStatusElement = document.getElementById('problems-status');
+const problemsCountBadge = document.getElementById('problems-count-badge');
 
 const showNativeErrorDialog = (title, message) => { console.error(`[${title}] ${message}`); window.electronAPI.showErrorDialog(title, message); };
 const getFileName = (filePath) => filePath ? filePath.split(pathSeparator).pop() : '';
@@ -139,21 +144,18 @@ function getIconClassForFilePath(filePath, isDirectory) {
 
 function getLanguageForFilePath(filePath) { const extension = getFileExtension(filePath); if (!isEditableTextFile(filePath) && !isSvgFile(filePath)) return 'plaintext'; switch (extension) { case 'html': case 'htm': return 'html'; case 'css': return 'css'; case 'scss': return 'scss'; case 'less': return 'less'; case 'js': case 'mjs': case 'cjs': return 'javascript'; case 'jsx': return 'javascript'; case 'ts': return 'typescript'; case 'tsx': return 'typescript'; case 'json': return 'json'; case 'md': case 'markdown': return 'markdown'; case 'xml': return 'xml'; case 'svg': return 'xml'; case 'yaml': case 'yml': return 'yaml'; case 'php': return 'php'; case 'py': return 'python'; case 'java': return 'java'; case 'cs': return 'csharp'; case 'c': case 'h': return 'c'; case 'cpp': case 'hpp': case 'cxx': return 'cpp'; case 'rb': return 'ruby'; case 'go': return 'go'; case 'rs': return 'rust'; case 'swift': return 'swift'; case 'kt': return 'kotlin'; case 'sql': return 'sql'; case 'sh': case 'bash': case 'zsh': return 'shell'; case 'bat': case 'cmd': return 'bat'; case 'ps1': return 'powershell'; case 'dockerfile': return 'dockerfile'; case 'gitignore': return 'plaintext'; case 'env': case 'properties': return 'ini'; case 'ini': return 'ini'; case 'toml': return 'toml'; case 'log': return 'log'; case 'csv': case 'tsv': return 'plaintext'; default: return 'plaintext'; } }
 
-
 function loadMonaco() { return new Promise((resolve, reject) => { if (monaco) { resolve(monaco); return; } const loaderScript = document.createElement('script'); loaderScript.src = 'node_modules/monaco-editor/min/vs/loader.js'; loaderScript.onload = () => { require.config({ paths: { 'vs': 'node_modules/monaco-editor/min/vs' } }); require(['vs/editor/editor.main'], (monacoInstance) => { console.log("Monaco Editor carregado."); monaco = monacoInstance; monaco.editor.setTheme('vs-dark'); resolve(monaco); }, (err) => { console.error("Erro ao carregar módulo principal do Monaco:", err); reject("Falha ao carregar o editor de código."); }); }; loaderScript.onerror = (err) => { console.error("Erro ao carregar loader.js do Monaco:", err); reject("Falha ao carregar script base do editor."); }; document.body.appendChild(loaderScript); }); }
-function initializeEditor() { if (!monaco) { showNativeErrorDialog("Erro Crítico", "Monaco Editor não carregado."); return; } if (editor) return; editor = monaco.editor.create(editorContainer, { language: 'plaintext', theme: 'vs-dark', automaticLayout: true, readOnly: true, fontFamily: 'var(--editor-font-family)', fontSize: 14, wordWrap: 'off', minimap: { enabled: true } }); editor.onDidChangeCursorPosition(e => { if (editorContainer.style.display !== 'none') { const pos = e.position; cursorPositionElement.textContent = `Ln ${pos.lineNumber}, Col ${pos.column}`; } else { cursorPositionElement.textContent = ''; } }); editor.onDidChangeModelContent(() => { clearTimeout(autosaveTimer); if (activeFilePath && currentEditorModel) { const fileState = openFiles.get(activeFilePath); if (fileState && (fileState.fileType === 'text' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'source'))) { if (currentEditorModel.originalContent !== undefined) { const currentContent = currentEditorModel.getValue(); const isDirty = currentContent !== currentEditorModel.originalContent; setFileDirty(activeFilePath, isDirty); if (isDirty) { autosaveTimer = setTimeout(() => { console.log(`Autosave triggered for: ${activeFilePath}`); saveFile(activeFilePath); }, AUTOSAVE_DELAY); } } } } }); console.log("Editor Monaco inicializado."); hideEditorPlaceholder(); }
+function initializeEditor() { if (!monaco) { showNativeErrorDialog("Erro Crítico", "Monaco Editor não carregado."); return; } if (editor) return; editor = monaco.editor.create(editorContainer, { language: 'plaintext', theme: 'vs-dark', automaticLayout: true, readOnly: true, fontFamily: 'var(--editor-font-family)', fontSize: 14, wordWrap: 'off', minimap: { enabled: true } }); editor.onDidChangeCursorPosition(e => { if (editorContainer.style.display !== 'none') { const pos = e.position; cursorPositionElement.textContent = `Ln ${pos.lineNumber}, Col ${pos.column}`; } else { cursorPositionElement.textContent = ''; } }); editor.onDidChangeModelContent(() => { clearTimeout(autosaveTimer); if (activeFilePath && currentEditorModel) { const fileState = openFiles.get(activeFilePath); if (fileState && (fileState.fileType === 'text' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'source'))) { if (currentEditorModel.originalContent !== undefined) { const currentContent = currentEditorModel.getValue(); const isDirty = currentContent !== currentEditorModel.originalContent; setFileDirty(activeFilePath, isDirty); if (isDirty) { autosaveTimer = setTimeout(() => { console.log(`Autosave triggered for: ${activeFilePath}`); saveFile(activeFilePath); }, AUTOSAVE_DELAY); } } } } });
+    initializeProblemsListener();
+    console.log("Editor Monaco inicializado."); hideEditorPlaceholder(); }
 function showEditorPlaceholder() { if (editorPlaceholder) editorPlaceholder.style.display = 'flex'; }
 function hideEditorPlaceholder() { if (editorPlaceholder) editorPlaceholder.style.display = 'none'; }
 function showEditor() { editorContainer.style.display = 'block'; imageViewerContainer.style.display = 'none'; hideEditorPlaceholder(); if(editor) editor.layout(); }
 function showImageViewer() { editorContainer.style.display = 'none'; imageViewerContainer.style.display = 'flex'; hideEditorPlaceholder(); }
 
-
 function clearEditor() { clearTimeout(autosaveTimer); if (editor) { editor.setModel(null); editor.updateOptions({ readOnly: true }); } currentEditorModel = null; activeFilePath = null; currentFileInfoElement.textContent = 'Nenhum arquivo aberto'; currentFileInfoElement.title = ''; cursorPositionElement.textContent = ''; imageDimensionsElement.textContent = ''; saveStatusElement.textContent = ''; showEditorPlaceholder(); editorContainer.style.display = 'block'; imageViewerContainer.style.display = 'none'; }
 function addEditorTab(filePath) {
-    if (openFiles.has(filePath)) {
-        return openFiles.get(filePath).tabElement;
-    }
-
+    if (openFiles.has(filePath)) { return openFiles.get(filePath).tabElement; }
     const fileName = getFileName(filePath);
     const tab = document.createElement('div');
     tab.className = 'editor-tab';
@@ -162,41 +164,30 @@ function addEditorTab(filePath) {
     tab.setAttribute('role', 'tab');
     tab.setAttribute('aria-selected', 'false');
     tab.setAttribute('tabindex', '-1');
-
     const title = document.createElement('span');
     title.className = 'tab-title';
     title.textContent = fileName;
-
     const dirtyIndicator = document.createElement('span');
     dirtyIndicator.className = 'tab-dirty-indicator';
     dirtyIndicator.setAttribute('aria-hidden', 'true');
-
     const closeBtn = document.createElement('button');
     closeBtn.className = 'tab-close-btn';
     closeBtn.innerHTML = '×';
     closeBtn.title = `Fechar ${fileName}`;
     closeBtn.setAttribute('aria-label', `Fechar ${fileName}`);
-
     closeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const tabElement = e.currentTarget.closest('.editor-tab');
-        if (tabElement) {
-            const currentPath = tabElement.dataset.filePath;
-            closeFile(currentPath);
-        } else {
-            console.error("Could not find parent tab element for close button.");
-        }
+        if (tabElement) { const currentPath = tabElement.dataset.filePath; closeFile(currentPath); }
+        else { console.error("Could not find parent tab element for close button."); }
     });
-
     tab.appendChild(title);
     tab.appendChild(dirtyIndicator);
     tab.appendChild(closeBtn);
-
     tab.addEventListener('click', (e) => {
         const currentPath = e.currentTarget.dataset.filePath;
         switchToFile(currentPath);
     });
-
     tab.addEventListener('mousedown', (e) => {
         if (e.button === 1) {
             e.preventDefault();
@@ -205,95 +196,319 @@ function addEditorTab(filePath) {
             closeFile(currentPath);
         }
     });
-
     editorTabsContainer.appendChild(tab);
-
-    const fileState = {
-        tabElement: tab,
-        isDirty: false,
-        fileType: 'text',
-        language: null,
-        dataUrl: null,
-        content: null,
-        fileName: fileName,
-        filePath: filePath
-    };
+    const fileState = { tabElement: tab, isDirty: false, fileType: 'text', language: null, dataUrl: null, content: null, fileName: fileName, filePath: filePath };
     openFiles.set(filePath, fileState);
-
     return tab;
 }
-function removeEditorTab(filePath) { const fileState = openFiles.get(filePath); if (fileState) { fileState.tabElement.remove(); } openFiles.delete(filePath); const model = editorModels.get(filePath); if (model) { model.dispose(); editorModels.delete(filePath); } editorViewStates.delete(filePath); }
+function removeEditorTab(filePath) { const fileState = openFiles.get(filePath); if (fileState) { fileState.tabElement.remove(); } openFiles.delete(filePath); const model = editorModels.get(filePath); if (model) { model.dispose(); editorModels.delete(filePath); } editorViewStates.delete(filePath);
+    if (allProblems.has(filePath)) {
+        allProblems.delete(filePath);
+        renderProblemsPanel();
+    }
+}
 function setFileDirty(filePath, isDirty) { const fileState = openFiles.get(filePath); if (!fileState || !(fileState.fileType === 'text' || fileState.fileType === 'svg') || fileState.isDirty === isDirty) return; fileState.isDirty = isDirty; const indicator = fileState.tabElement.querySelector('.tab-dirty-indicator'); if (indicator) { indicator.textContent = isDirty ? '●' : ''; indicator.title = isDirty ? 'Modificado' : ''; } if (filePath === activeFilePath) { updateSaveStatus(); } }
 function updateSaveStatus() { const fileState = openFiles.get(activeFilePath); const showDirty = fileState && fileState.isDirty && (fileState.fileType === 'text' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'source')); saveStatusElement.textContent = showDirty ? '* Modificado' : ''; }
-
 
 async function closeFile(filePath) {
     clearTimeout(autosaveTimer);
     const fileState = openFiles.get(filePath);
     if (!fileState) return;
-
     if ((fileState.fileType === 'text' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'source')) && fileState.isDirty) {
         const discard = await showConfirmDialog(`"${getFileName(filePath)}" foi modificado.\n\nDeseja fechar e descartar as alterações?`);
-        if (!discard) {
-            console.log("Close file cancelled by user confirmation.");
-            return;
-        }
+        if (!discard) { console.log("Close file cancelled by user confirmation."); return; }
          console.log("Closing dirty file after user confirmation.");
     }
-
     const wasActive = (filePath === activeFilePath);
     removeEditorTab(filePath);
-
     if (wasActive) {
         const remainingTabs = Array.from(openFiles.keys());
-        if (remainingTabs.length > 0) {
-            switchToFile(remainingTabs[remainingTabs.length - 1]);
-        } else {
-            clearEditor();
-        }
+        if (remainingTabs.length > 0) { switchToFile(remainingTabs[remainingTabs.length - 1]); }
+        else { clearEditor(); }
     }
 }
 
-async function openFile(filePath) { if (!isSupportedImageView(filePath) && !isEditableTextFile(filePath)) { showNativeErrorDialog('Aviso', `Não é possível abrir "${getFileName(filePath)}" no Lumen IDE.`); return; } if (openFiles.has(filePath)) { switchToFile(filePath); return; } console.log(`Abrindo arquivo: ${filePath}`); if (!editor) initializeEditor(); if (!editor && !isSupportedImageView(filePath)) return; try { const result = await window.electronAPI.readFile(filePath); if (result.type === 'error') { throw new Error(result.error); } addEditorTab(filePath); const fileState = openFiles.get(filePath); fileState.fileType = result.type; fileState.filePath = result.filePath; fileState.fileName = result.fileName; if (result.type === 'text') { fileState.content = result.content; fileState.language = getLanguageForFilePath(filePath); fileState.dataUrl = null; const modelUri = monaco.Uri.file(filePath); let model = monaco.editor.getModel(modelUri); if (!model) model = monaco.editor.createModel(result.content, fileState.language, modelUri); model.originalContent = result.content; editorModels.set(filePath, model); } else if (result.type === 'image') { fileState.dataUrl = result.dataUrl; fileState.content = null; fileState.language = null; editorModels.set(filePath, null); } else if (result.type === 'svg') { fileState.content = result.content; fileState.language = 'xml'; fileState.dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(result.content)}`; fileState.svgViewMode = 'rendered'; const modelUri = monaco.Uri.file(filePath); let model = monaco.editor.getModel(modelUri); if (!model) model = monaco.editor.createModel(result.content, 'xml', modelUri); model.originalContent = result.content; editorModels.set(filePath, model); } switchToFile(filePath); } catch (error) { console.error(`Erro ao abrir arquivo ${filePath}:`, error); showNativeErrorDialog('Erro ao Abrir Arquivo', `Não foi possível abrir "${getFileName(filePath)}": ${error.message}`); removeEditorTab(filePath); if (activeFilePath === filePath) clearEditor(); } }
-function switchToFile(filePath) { clearTimeout(autosaveTimer); const fileState = openFiles.get(filePath); if (!fileState) { console.warn("Tentativa de mudar para arquivo não aberto:", filePath); return; } if (filePath === activeFilePath && !fileState.forceSwitch) return; if (activeFilePath && editorContainer.style.display !== 'none') { const previousViewState = editor?.saveViewState(); if (previousViewState) editorViewStates.set(activeFilePath, previousViewState); } const previouslyActiveTab = activeFilePath ? openFiles.get(activeFilePath)?.tabElement : null; if (previouslyActiveTab) { previouslyActiveTab.classList.remove('active'); previouslyActiveTab.setAttribute('aria-selected', 'false'); previouslyActiveTab.setAttribute('tabindex', '-1'); } activeFilePath = filePath; fileState.tabElement.classList.add('active'); fileState.tabElement.setAttribute('aria-selected', 'true'); fileState.tabElement.setAttribute('tabindex', '0'); fileState.tabElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); fileState.forceSwitch = false; cursorPositionElement.textContent = ''; imageDimensionsElement.textContent = ''; if (fileState.fileType === 'image' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'rendered')) { imageViewerImg.onload = () => { imageDimensionsElement.textContent = `${imageViewerImg.naturalWidth}x${imageViewerImg.naturalHeight}`; imageViewerImg.onload = null; }; imageViewerImg.onerror = () => { imageViewerError.textContent = `Erro ao carregar ${fileState.fileType}.`; imageViewerError.style.display = 'block'; imageViewerImg.style.display = 'none'; imageDimensionsElement.textContent = ''; imageViewerImg.onerror = null; }; imageViewerImg.src = fileState.dataUrl; imageViewerImg.alt = `Visualização de ${fileState.fileName}`; imageViewerImg.style.display = 'block'; imageViewerError.style.display = 'none'; if (fileState.fileType === 'svg') { svgToggleViewBtn.textContent = 'Ver Código Fonte'; svgToggleViewBtn.style.display = 'inline-block'; } else { svgToggleViewBtn.style.display = 'none'; } showImageViewer(); currentFileInfoElement.textContent = `${fileState.fileName}`; currentFileInfoElement.title = filePath; updateSaveStatus(); } else if (fileState.fileType === 'text' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'source')) { if (!editor) initializeEditor(); if (!editor) { showNativeErrorDialog("Erro", "Editor não inicializado."); return; } currentEditorModel = editorModels.get(filePath); if (!currentEditorModel) { if (fileState.fileType === 'svg') { const modelUri = monaco.Uri.file(filePath); currentEditorModel = monaco.editor.createModel(fileState.content, 'xml', modelUri); currentEditorModel.originalContent = fileState.content; editorModels.set(filePath, currentEditorModel); console.log("Modelo SVG recriado para modo source."); } else { console.error("Modelo não encontrado e não é SVG:", filePath); showNativeErrorDialog('Erro Interno', `Modelo do editor não encontrado para ${fileState.fileName}.`); clearEditor(); return; } } editor.setModel(currentEditorModel); const savedViewState = editorViewStates.get(filePath); if (savedViewState) editor.restoreViewState(savedViewState); else editor.revealLine(1); editor.updateOptions({ readOnly: false }); editor.focus(); if (fileState.fileType === 'svg') { svgToggleViewBtn.textContent = 'Ver Imagem'; svgToggleViewBtn.style.display = 'inline-block'; } else { svgToggleViewBtn.style.display = 'none'; } showEditor(); currentFileInfoElement.textContent = `${fileState.fileName}`; currentFileInfoElement.title = filePath; updateSaveStatus(); } else { console.error("Tipo de arquivo desconhecido ou estado inválido:", fileState); clearEditor(); showNativeErrorDialog("Erro", `Estado Inválido - Não foi possível determinar como exibir ${fileState.fileName}.`); } selectFileTreeItem(filePath); }
-async function saveFile(filePathToSave = activeFilePath) { if (!filePathToSave) return false; const fileState = openFiles.get(filePathToSave); if (!fileState) { showNativeErrorDialog('Erro ao Salvar', `Estado inválido para o arquivo ${getFileName(filePathToSave)}.`); return false; } if (fileState.fileType === 'image' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'rendered')) { console.warn("Tentativa de salvar arquivo não textual/editável:", filePathToSave); return false; } const model = editorModels.get(filePathToSave); if (!model) { showNativeErrorDialog('Erro ao Salvar', `Modelo do editor não encontrado para ${getFileName(filePathToSave)}.`); return false; } if (!fileState.isDirty) { if (filePathToSave === activeFilePath) { saveStatusElement.textContent = 'Salvo!'; setTimeout(() => { if (activeFilePath === filePathToSave && !openFiles.get(filePathToSave)?.isDirty) saveStatusElement.textContent = ''; }, 1500); } return true; } console.log(`Salvando arquivo: ${filePathToSave}`); const currentContent = model.getValue(); if (filePathToSave === activeFilePath) saveStatusElement.textContent = 'Salvando...'; try { const result = await window.electronAPI.writeFile(filePathToSave, currentContent); if (result.error) throw new Error(result.error); if (result.success) { model.originalContent = currentContent; setFileDirty(filePathToSave, false); clearTimeout(autosaveTimer); if (filePathToSave === activeFilePath) { saveStatusElement.textContent = 'Salvo!'; setTimeout(() => { if (activeFilePath === filePathToSave && !openFiles.get(filePathToSave)?.isDirty) saveStatusElement.textContent = ''; }, 2000); } return true; } else { throw new Error("Resultado inesperado do backend ao salvar."); } } catch (error) { console.error(`Erro ao salvar arquivo ${filePathToSave}:`, error); showNativeErrorDialog('Erro ao Salvar', `Não foi possível salvar "${getFileName(filePathToSave)}": ${error.message}`); if (filePathToSave === activeFilePath) saveStatusElement.textContent = 'Erro ao salvar!'; return false; } }
+async function openFile(filePath) { if (!isSupportedImageView(filePath) && !isEditableTextFile(filePath)) { showNativeErrorDialog('Aviso', `Não é possível abrir "${getFileName(filePath)}" no Lumen IDE.`); return; } if (openFiles.has(filePath)) { switchToFile(filePath); return; } console.log(`Abrindo arquivo: ${filePath}`); if (!editor) initializeEditor(); if (!editor && !isSupportedImageView(filePath)) return; try { const result = await window.electronAPI.readFile(filePath); if (result.type === 'error') { throw new Error(result.error); } addEditorTab(filePath); const fileState = openFiles.get(filePath); fileState.fileType = result.type; fileState.filePath = result.filePath; fileState.fileName = result.fileName; if (result.type === 'text') { fileState.content = result.content; fileState.language = getLanguageForFilePath(filePath); fileState.dataUrl = null; const modelUri = monaco.Uri.file(filePath); let model = monaco.editor.getModel(modelUri); if (!model) model = monaco.editor.createModel(result.content, fileState.language, modelUri); model.originalContent = result.content; editorModels.set(filePath, model);
+             updateProblemsForModel(model.uri);
+        } else if (result.type === 'image') { fileState.dataUrl = result.dataUrl; fileState.content = null; fileState.language = null; editorModels.set(filePath, null);
+        } else if (result.type === 'svg') { fileState.content = result.content; fileState.language = 'xml'; fileState.dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(result.content)}`; fileState.svgViewMode = 'rendered'; const modelUri = monaco.Uri.file(filePath); let model = monaco.editor.getModel(modelUri); if (!model) model = monaco.editor.createModel(result.content, 'xml', modelUri); model.originalContent = result.content; editorModels.set(filePath, model);
+             updateProblemsForModel(model.uri);
+        } switchToFile(filePath); } catch (error) { console.error(`Erro ao abrir arquivo ${filePath}:`, error); showNativeErrorDialog('Erro ao Abrir Arquivo', `Não foi possível abrir "${getFileName(filePath)}": ${error.message}`); removeEditorTab(filePath); if (activeFilePath === filePath) clearEditor(); } }
+function switchToFile(filePath) {
+    clearTimeout(autosaveTimer);
+    const fileState = openFiles.get(filePath);
+    if (!fileState) { console.warn("Tentativa de mudar para arquivo não aberto:", filePath); return; }
+    if (filePath === activeFilePath && !fileState.forceSwitch) return;
+    if (activeFilePath && editorContainer.style.display !== 'none') { const previousViewState = editor?.saveViewState(); if (previousViewState) editorViewStates.set(activeFilePath, previousViewState); }
+    const previouslyActiveTab = activeFilePath ? openFiles.get(activeFilePath)?.tabElement : null;
+    if (previouslyActiveTab) { previouslyActiveTab.classList.remove('active'); previouslyActiveTab.setAttribute('aria-selected', 'false'); previouslyActiveTab.setAttribute('tabindex', '-1'); }
+    activeFilePath = filePath;
+    fileState.tabElement.classList.add('active');
+    fileState.tabElement.setAttribute('aria-selected', 'true');
+    fileState.tabElement.setAttribute('tabindex', '0');
+    fileState.tabElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    fileState.forceSwitch = false;
+    cursorPositionElement.textContent = '';
+    imageDimensionsElement.textContent = '';
+    if (fileState.fileType === 'image' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'rendered')) {
+        imageViewerImg.onload = () => { imageDimensionsElement.textContent = `${imageViewerImg.naturalWidth}x${imageViewerImg.naturalHeight}`; imageViewerImg.onload = null; };
+        imageViewerImg.onerror = () => { imageViewerError.textContent = `Erro ao carregar ${fileState.fileType}.`; imageViewerError.style.display = 'block'; imageViewerImg.style.display = 'none'; imageDimensionsElement.textContent = ''; imageViewerImg.onerror = null; };
+        imageViewerImg.src = fileState.dataUrl;
+        imageViewerImg.alt = `Visualização de ${fileState.fileName}`;
+        imageViewerImg.style.display = 'block';
+        imageViewerError.style.display = 'none';
+        if (fileState.fileType === 'svg') { svgToggleViewBtn.textContent = 'Ver Código Fonte'; svgToggleViewBtn.style.display = 'inline-block'; } else { svgToggleViewBtn.style.display = 'none'; }
+        showImageViewer();
+        currentFileInfoElement.textContent = `${fileState.fileName}`; currentFileInfoElement.title = filePath;
+        updateSaveStatus();
+    } else if (fileState.fileType === 'text' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'source')) {
+        if (!editor) initializeEditor();
+        if (!editor) { showNativeErrorDialog("Erro", "Editor não inicializado."); return; }
+        currentEditorModel = editorModels.get(filePath);
+        if (!currentEditorModel) {
+            if (fileState.fileType === 'svg') {
+                const modelUri = monaco.Uri.file(filePath);
+                currentEditorModel = monaco.editor.createModel(fileState.content, 'xml', modelUri);
+                currentEditorModel.originalContent = fileState.content;
+                editorModels.set(filePath, currentEditorModel);
+                updateProblemsForModel(modelUri);
+                console.log("Modelo SVG recriado para modo source.");
+            } else {
+                console.error("Modelo não encontrado e não é SVG:", filePath);
+                showNativeErrorDialog('Erro Interno', `Modelo do editor não encontrado para ${fileState.fileName}.`);
+                clearEditor();
+                return;
+            }
+        }
+        editor.setModel(currentEditorModel);
+        const savedViewState = editorViewStates.get(filePath);
+        if (savedViewState) { editor.restoreViewState(savedViewState); }
+        else { editor.revealLine(1); }
+        editor.updateOptions({ readOnly: false });
+        editor.focus();
 
+        if (fileState.fileType === 'svg') { svgToggleViewBtn.textContent = 'Ver Imagem'; svgToggleViewBtn.style.display = 'inline-block'; }
+        else { svgToggleViewBtn.style.display = 'none'; }
+        showEditor();
+        currentFileInfoElement.textContent = `${fileState.fileName}`; currentFileInfoElement.title = filePath;
+        updateSaveStatus();
+        const currentPos = editor.getPosition();
+        if (currentPos) {
+            cursorPositionElement.textContent = `Ln ${currentPos.lineNumber}, Col ${currentPos.column}`;
+        }
+    } else {
+        console.error("Tipo de arquivo desconhecido ou estado inválido:", fileState);
+        clearEditor();
+        showNativeErrorDialog("Erro", `Estado Inválido - Não foi possível determinar como exibir ${fileState.fileName}.`);
+    }
+    selectFileTreeItem(filePath);
+}
+async function saveFile(filePathToSave = activeFilePath) {
+    if (!filePathToSave) return false;
+    const fileState = openFiles.get(filePathToSave);
+    if (!fileState) { showNativeErrorDialog('Erro ao Salvar', `Estado inválido para o arquivo ${getFileName(filePathToSave)}.`); return false; }
+    if (fileState.fileType === 'image' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'rendered')) { console.warn("Tentativa de salvar arquivo não textual/editável:", filePathToSave); return false; }
+    const model = editorModels.get(filePathToSave);
+    if (!model) { showNativeErrorDialog('Erro ao Salvar', `Modelo do editor não encontrado para ${getFileName(filePathToSave)}.`); return false; }
+    if (!fileState.isDirty) { if (filePathToSave === activeFilePath) { saveStatusElement.textContent = 'Salvo!'; setTimeout(() => { if (activeFilePath === filePathToSave && !openFiles.get(filePathToSave)?.isDirty) saveStatusElement.textContent = ''; }, 1500); } return true; }
+    console.log(`Salvando arquivo: ${filePathToSave}`);
+    const currentContent = model.getValue();
+    if (filePathToSave === activeFilePath) saveStatusElement.textContent = 'Salvando...';
+    try {
+        const result = await window.electronAPI.writeFile(filePathToSave, currentContent);
+        if (result.error) throw new Error(result.error);
+        if (result.success) {
+            model.originalContent = currentContent;
+            setFileDirty(filePathToSave, false);
+            clearTimeout(autosaveTimer);
+            if (filePathToSave === activeFilePath) {
+                saveStatusElement.textContent = 'Salvo!';
+                setTimeout(() => { if (activeFilePath === filePathToSave && !openFiles.get(filePathToSave)?.isDirty) saveStatusElement.textContent = ''; }, 2000);
+            }
+            return true;
+        } else { throw new Error("Resultado inesperado do backend ao salvar."); }
+    } catch (error) {
+        console.error(`Erro ao salvar arquivo ${filePathToSave}:`, error);
+        showNativeErrorDialog('Erro ao Salvar', `Não foi possível salvar "${getFileName(filePathToSave)}": ${error.message}`);
+        if (filePathToSave === activeFilePath) saveStatusElement.textContent = 'Erro ao salvar!';
+        return false;
+    }
+}
 
-function renderTreeItem(item, parentElement, depth = 0) { const listItem = document.createElement('li'); listItem.dataset.filePath = item.path; listItem.dataset.isDirectory = item.isDirectory; listItem.dataset.depth = depth; listItem.title = item.path; listItem.classList.add(item.isDirectory ? 'type-directory' : 'type-file'); const itemContent = document.createElement('div'); itemContent.className = 'tree-item-content'; const expandIconContainer = document.createElement('span'); expandIconContainer.className = 'expand-icon-container'; if (item.isDirectory) { const expandIcon = document.createElement('span'); expandIcon.className = 'expand-icon'; expandIcon.setAttribute('aria-hidden', 'true'); expandIconContainer.appendChild(expandIcon); listItem.setAttribute('aria-expanded', 'false'); } itemContent.appendChild(expandIconContainer); const typeIcon = document.createElement('i'); typeIcon.className = 'tree-icon ' + getIconClassForFilePath(item.path, item.isDirectory); typeIcon.setAttribute('aria-hidden', 'true'); itemContent.appendChild(typeIcon); const nameSpan = document.createElement('span'); nameSpan.className = 'item-name'; nameSpan.textContent = item.name; itemContent.appendChild(nameSpan); listItem.appendChild(itemContent); listItem.style.setProperty('--depth', depth); listItem.addEventListener('click', (e) => { e.stopPropagation(); handleTreeItemClick(item, listItem); }); listItem.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); showContextMenu(e, 'tree-item', item); selectFileTreeItem(item.path); }); parentElement.appendChild(listItem); if (item.isDirectory) { const subList = document.createElement('ul'); subList.style.display = 'none'; listItem.appendChild(subList); } }
-async function handleTreeItemClick(item, listItemElement) { selectFileTreeItem(item.path); if (item.isFile) { if (isEditableTextFile(item.path) || isSupportedImageView(item.path)) { openFile(item.path); } else { showNativeErrorDialog('Aviso', `Não é possível abrir "${getFileName(item.path)}" no Lumen IDE.`); } } else if (item.isDirectory) { const subList = listItemElement.querySelector('ul'); if (!subList) return; const isExpanded = listItemElement.classList.contains('expanded'); if (isExpanded) { subList.style.display = 'none'; listItemElement.classList.remove('expanded'); listItemElement.setAttribute('aria-expanded', 'false'); } else { if (subList.children.length === 0 || subList.dataset.needsRefresh === 'true') { listItemElement.classList.add('loading'); subList.innerHTML = '<li class="placeholder">Carregando...</li>'; subList.style.display = 'block'; try { const subItemsResult = await window.electronAPI.readDirectory(item.path); listItemElement.classList.remove('loading'); subList.innerHTML = ''; if (subItemsResult.error) throw new Error(subItemsResult.error); const subItems = subItemsResult; if (subItems.length === 0) { const emptyMsg = document.createElement('li'); emptyMsg.textContent = '(Vazio)'; emptyMsg.classList.add('placeholder'); emptyMsg.style.paddingLeft = `15px`; subList.appendChild(emptyMsg); } else { subItems.forEach(subItem => renderTreeItem(subItem, subList, parseInt(listItemElement.dataset.depth ?? '0') + 1)); } subList.dataset.needsRefresh = 'false'; listItemElement.classList.add('expanded'); listItemElement.setAttribute('aria-expanded', 'true'); subList.style.display = 'block'; } catch (error) { listItemElement.classList.remove('loading'); console.error(`Erro ao expandir diretório ${item.path}:`, error); subList.innerHTML = `<li class="placeholder error">Erro ao carregar</li>`; showNativeErrorDialog('Erro ao Ler Pasta', `Não foi possível ler "${item.name}": ${error.message}`); subList.style.display = 'none'; } } else { subList.style.display = 'block'; listItemElement.classList.add('expanded'); listItemElement.setAttribute('aria-expanded', 'true'); } } } }
+let draggedItemPath = null;
+
+function handleDragStartLogic(event, path, targetElement) {
+     if (!currentFolderPath) { event.preventDefault(); return; }
+    console.log(`handleDragStartLogic: Event fired for path: ${path}`, event);
+    draggedItemPath = path;
+    event.dataTransfer.setData('text/plain', path);
+    event.dataTransfer.effectAllowed = 'move';
+    targetElement.classList.add('dragging');
+}
+
+function handleDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const targetElement = event.currentTarget;
+    const targetPath = targetElement.dataset.filePath;
+    const isTargetDirectory = targetElement.dataset.isDirectory === 'true';
+    const isRootDropPanel = targetElement.id === 'file-tree-panel';
+    let addDragOverClass = false;
+    if (draggedItemPath && (isTargetDirectory || isRootDropPanel)) {
+        const effectiveTargetPath = isRootDropPanel ? currentFolderPath : targetPath;
+        if (draggedItemPath === effectiveTargetPath) { addDragOverClass = false; }
+        else if (effectiveTargetPath.startsWith(draggedItemPath + pathSeparator)) { addDragOverClass = false; }
+        else if ((draggedItemPath.substring(0, draggedItemPath.lastIndexOf(pathSeparator)) || currentFolderPath) === effectiveTargetPath) { addDragOverClass = false; }
+        else if (!isTargetDirectory && !isRootDropPanel) { addDragOverClass = false; }
+        else { addDragOverClass = true; }
+    }
+     if (addDragOverClass) {
+         if (isRootDropPanel) { targetElement.classList.add('drag-over-root'); }
+         else { targetElement.classList.add('drag-over'); }
+     } else {
+         if (isRootDropPanel) { targetElement.classList.remove('drag-over-root'); }
+         else { targetElement.classList.remove('drag-over'); }
+     }
+}
+
+function handleDragLeave(event) {
+    const targetElement = event.currentTarget;
+     if (targetElement.id === 'file-tree-panel') { targetElement.classList.remove('drag-over-root'); }
+     else { targetElement.classList.remove('drag-over'); }
+}
+
+async function handleDrop(event) {
+    event.preventDefault();
+    const targetElement = event.currentTarget;
+    const isRootDrop = targetElement.id === 'file-tree-panel';
+    const targetPath = isRootDrop ? currentFolderPath : targetElement.dataset.filePath;
+    if(isRootDrop) { targetElement.classList.remove('drag-over-root'); }
+    else { targetElement.classList.remove('drag-over'); }
+    const sourcePath = event.dataTransfer.getData('text/plain');
+    if (!sourcePath || !targetPath || !draggedItemPath || sourcePath !== draggedItemPath) {
+        console.error("Drop error: Missing source or target path, or mismatch.", { sourcePath, targetPath, draggedItemPath });
+        draggedItemPath = null; return;
+    }
+    if (sourcePath === targetPath) { console.log("Drop prevented: Cannot drop item onto itself."); draggedItemPath = null; return; }
+    if (targetPath.startsWith(sourcePath + pathSeparator)) { console.log("Drop prevented: Cannot drop a folder into itself or a descendant."); draggedItemPath = null; return; }
+     const sourceParentPath = sourcePath.substring(0, sourcePath.lastIndexOf(pathSeparator)) || currentFolderPath;
+     if (sourceParentPath === targetPath) { console.log("Drop ignored: Item is already in the target directory."); draggedItemPath = null; return; }
+    const sourceFileName = getFileName(sourcePath);
+    const newPath = targetPath + pathSeparator + sourceFileName;
+    console.log(`Drop detected: Move "${sourcePath}" to "${newPath}"`);
+    try {
+        const result = await window.electronAPI.renamePath(sourcePath, newPath);
+        if (result.error) { throw new Error(result.error); }
+        console.log(`Move successful: ${sourcePath} -> ${newPath}`);
+        await updateStateForRename(sourcePath, newPath);
+        const originalParentPath = sourcePath.substring(0, sourcePath.lastIndexOf(pathSeparator)) || currentFolderPath;
+        refreshSubTree(originalParentPath);
+        refreshSubTree(targetPath);
+    } catch (error) {
+        console.error(`Error moving item from ${sourcePath} to ${newPath}:`, error);
+        showNativeErrorDialog('Erro ao Mover', `Não foi possível mover "${sourceFileName}": ${error.message}`);
+        const originalParentPath = sourcePath.substring(0, sourcePath.lastIndexOf(pathSeparator)) || currentFolderPath;
+        refreshSubTree(originalParentPath);
+        refreshSubTree(targetPath);
+    } finally {
+        draggedItemPath = null;
+         document.querySelectorAll('.drag-over, .drag-over-root').forEach(el => el.classList.remove('drag-over', 'drag-over-root'));
+         document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    }
+}
+
+function handleDragEnd(event) {
+    const listItem = event.target.closest('li[draggable="true"]');
+    if (listItem) {
+         console.log('Drag End for:', listItem.dataset.filePath);
+         listItem.classList.remove('dragging');
+    } else {
+         console.log('Drag End (listItem not found)');
+    }
+    document.querySelectorAll('.drag-over, .drag-over-root').forEach(el => el.classList.remove('drag-over', 'drag-over-root'));
+    draggedItemPath = null;
+}
+
+function renderTreeItem(item, parentElement, depth = 0) {
+    const listItem = document.createElement('li');
+    listItem.dataset.filePath = item.path;
+    listItem.dataset.isDirectory = item.isDirectory;
+    listItem.dataset.depth = depth;
+    listItem.title = item.path;
+    listItem.classList.add(item.isDirectory ? 'type-directory' : 'type-file');
+    listItem.setAttribute('draggable', 'true');
+    if (item.isDirectory) {
+        listItem.addEventListener('dragover', handleDragOver);
+        listItem.addEventListener('dragleave', handleDragLeave);
+        listItem.addEventListener('drop', handleDrop);
+    }
+    const itemContent = document.createElement('div');
+    itemContent.className = 'tree-item-content';
+    const expandIconContainer = document.createElement('span');
+    expandIconContainer.className = 'expand-icon-container';
+    if (item.isDirectory) {
+        const expandIcon = document.createElement('span');
+        expandIcon.className = 'expand-icon';
+        expandIcon.setAttribute('aria-hidden', 'true');
+        expandIconContainer.appendChild(expandIcon);
+        listItem.setAttribute('aria-expanded', 'false');
+    }
+    itemContent.appendChild(expandIconContainer);
+    const typeIcon = document.createElement('i');
+    typeIcon.className = 'tree-icon ' + getIconClassForFilePath(item.path, item.isDirectory);
+    typeIcon.setAttribute('aria-hidden', 'true');
+    itemContent.appendChild(typeIcon);
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'item-name';
+    nameSpan.textContent = item.name;
+    itemContent.appendChild(nameSpan);
+    listItem.appendChild(itemContent);
+    listItem.style.setProperty('--depth', depth);
+    listItem.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleTreeItemClick(item, listItem);
+    });
+    listItem.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showContextMenu(e, 'tree-item', item);
+        selectFileTreeItem(item.path);
+    });
+    parentElement.appendChild(listItem);
+    if (item.isDirectory) {
+        const subList = document.createElement('ul');
+        subList.style.display = 'none';
+        listItem.appendChild(subList);
+    }
+}
+
+async function handleTreeItemClick(item, listItemElement) { selectFileTreeItem(item.path); if (item.isFile) { if (isEditableTextFile(item.path) || isSupportedImageView(item.path)) { openFile(item.path); } else { showNativeErrorDialog('Aviso', `Não é possível abrir "${getFileName(item.path)}" no Lumen IDE.`); } } else if (item.isDirectory) { const subList = listItemElement.querySelector('ul'); if (!subList) return; const isExpanded = listItemElement.classList.contains('expanded'); if (isExpanded) { subList.style.display = 'none'; listItemElement.classList.remove('expanded'); listItemElement.setAttribute('aria-expanded', 'false'); } else { if (subList.children.length === 0 || subList.dataset.needsRefresh === 'true') { listItemElement.classList.add('loading'); subList.innerHTML = '<li class="placeholder">Carregando...</li>'; subList.style.display = 'block'; try { const subItemsResult = await window.electronAPI.readDirectory(item.path); listItemElement.classList.remove('loading'); subList.innerHTML = ''; if (subItemsResult.error) throw new Error(subItemsResult.error); const subItems = subItemsResult; if (subItems.length === 0) { const emptyMsg = document.createElement('li'); emptyMsg.textContent = '(Vazio)'; emptyMsg.classList.add('placeholder'); emptyMsg.style.paddingLeft = `calc(var(--tree-indentation) * (${parseInt(listItemElement.dataset.depth ?? '0') + 1}))`; subList.appendChild(emptyMsg); } else { subItems.forEach(subItem => renderTreeItem(subItem, subList, parseInt(listItemElement.dataset.depth ?? '0') + 1)); } subList.dataset.needsRefresh = 'false'; listItemElement.classList.add('expanded'); listItemElement.setAttribute('aria-expanded', 'true'); subList.style.display = 'block'; } catch (error) { listItemElement.classList.remove('loading'); console.error(`Erro ao expandir diretório ${item.path}:`, error); subList.innerHTML = `<li class="placeholder error">Erro ao carregar</li>`; showNativeErrorDialog('Erro ao Ler Pasta', `Não foi possível ler "${item.name}": ${error.message}`); subList.style.display = 'none'; } } else { subList.style.display = 'block'; listItemElement.classList.add('expanded'); listItemElement.setAttribute('aria-expanded', 'true'); } } } }
 function selectFileTreeItem(filePath) { fileTreeElement.querySelectorAll('li.selected').forEach(el => el.classList.remove('selected')); const itemToSelect = fileTreeElement.querySelector(`li[data-file-path="${CSS.escape(filePath)}"]`); if (itemToSelect) { itemToSelect.classList.add('selected'); } }
 
-
-async function refreshTree(folderPath = currentFolderPath, targetElement = fileTreeElement, depth = 0) { if (!folderPath) return; const isRoot = (targetElement === fileTreeElement); targetElement.innerHTML = '<li class="placeholder" style="padding-left: 15px;">Carregando...</li>'; try { const itemsResult = await window.electronAPI.readDirectory(folderPath); targetElement.innerHTML = ''; if (itemsResult.error) throw new Error(itemsResult.error); const items = itemsResult; if (items.length === 0) { const emptyMsgText = isRoot ? 'Pasta vazia. Clique direito ou use botões para criar.' : '(Vazio)'; const emptyMsg = document.createElement('li'); emptyMsg.textContent = emptyMsgText; emptyMsg.classList.add('placeholder'); emptyMsg.style.paddingLeft = '15px'; targetElement.appendChild(emptyMsg); } else { items.forEach(item => renderTreeItem(item, targetElement, depth)); } } catch (error) { console.error("Erro ao recarregar árvore/sub-árvore:", error); const errorMsg = `<li class="placeholder error" style="padding-left: 15px;">Erro: ${error.message.length > 50 ? error.message.substring(0, 50) + '...' : error.message}</li>`; targetElement.innerHTML = errorMsg; if (isRoot) showNativeErrorDialog('Erro na Árvore', `Não foi possível carregar arquivos: ${error.message}`); } }
+async function refreshTree(folderPath = currentFolderPath, targetElement = fileTreeElement, depth = 0) { if (!folderPath) return; const isRoot = (targetElement === fileTreeElement); targetElement.innerHTML = '<li class="placeholder" style="padding-left: 15px;">Carregando...</li>'; try { const itemsResult = await window.electronAPI.readDirectory(folderPath); targetElement.innerHTML = ''; if (itemsResult.error) throw new Error(itemsResult.error); const items = itemsResult; if (items.length === 0) { const emptyMsgText = isRoot ? 'Pasta vazia. Clique direito ou use botões para criar.' : '(Vazio)'; const emptyMsg = document.createElement('li'); emptyMsg.textContent = emptyMsgText; emptyMsg.classList.add('placeholder'); emptyMsg.style.paddingLeft = `calc(var(--tree-indentation) * ${depth + 1})`; targetElement.appendChild(emptyMsg); } else { items.forEach(item => renderTreeItem(item, targetElement, depth)); } } catch (error) { console.error("Erro ao recarregar árvore/sub-árvore:", error); const errorMsg = `<li class="placeholder error" style="padding-left: 15px;">Erro: ${error.message.length > 50 ? error.message.substring(0, 50) + '...' : error.message}</li>`; targetElement.innerHTML = errorMsg; if (isRoot) showNativeErrorDialog('Erro na Árvore', `Não foi possível carregar arquivos: ${error.message}`); } }
 function refreshSubTree(folderPath) { if (!folderPath || folderPath === '') { console.warn("Tentativa de refreshSubTree com path inválido."); return; } console.log(`Solicitado refresh para a pasta: ${folderPath}`); if (folderPath === currentFolderPath) { refreshTree(currentFolderPath, fileTreeElement, 0); } else { const parentLiElement = fileTreeElement.querySelector(`li[data-file-path="${CSS.escape(folderPath)}"]`); if (parentLiElement && parentLiElement.dataset.isDirectory === 'true') { const subListElement = parentLiElement.querySelector('ul'); if (subListElement) { const depth = parseInt(parentLiElement.dataset.depth || '0') + 1; refreshTree(folderPath, subListElement, depth); if (!parentLiElement.classList.contains('expanded')) { parentLiElement.classList.add('expanded'); parentLiElement.setAttribute('aria-expanded', 'true'); subListElement.style.display = 'block'; } } else { console.warn(`Sub-lista não encontrada para ${folderPath} ao tentar refreshSubTree.`); } } else { console.warn(`Elemento LI não encontrado ou não é diretório para ${folderPath} ao tentar refreshSubTree.`); const grandParentPath = folderPath.includes(pathSeparator) ? folderPath.substring(0, folderPath.lastIndexOf(pathSeparator)) : currentFolderPath; refreshSubTree(grandParentPath || currentFolderPath); } } }
 
 async function loadDirectory(folderPath) {
     console.log(`Carregando diretório raiz: ${folderPath}`);
-
-    if (isLiveServerRunning && currentLiveServerFolder !== folderPath) {
-        console.log("Pasta diferente aberta, parando Live Server anterior...");
-        await stopLiveServer();
-    }
-
+    if (isLiveServerRunning && currentLiveServerFolder !== folderPath) { console.log("Pasta diferente aberta, parando Live Server anterior..."); await stopLiveServer(); }
     currentFolderPath = folderPath;
     const folderName = getFileName(folderPath);
     currentFolderElement.textContent = `${folderName}`;
     currentFolderElement.title = folderPath;
-
     clearTimeout(autosaveTimer);
     const openPaths = Array.from(openFiles.keys());
-    for (const path of openPaths) {
-        removeEditorTab(path);
-    }
+    for (const path of openPaths) { removeEditorTab(path); }
     clearEditor();
-
+    editorModels.forEach(model => model.dispose());
+    editorModels.clear();
+    editorViewStates.clear();
+    allProblems.clear();
+    renderProblemsPanel();
     await refreshTree(folderPath);
-
     newFileBtn.disabled = false;
     newFolderBtn.disabled = false;
     liveServerBtn.disabled = false;
 }
-
 
 function showInputDialog(labelText, defaultValue = '') { console.log('[showInputDialog] Called. Label:', labelText, 'Default:', defaultValue); return new Promise((resolve) => { inputDialogLabel.textContent = labelText; inputDialogInput.value = defaultValue; inputDialogOverlay.style.display = 'flex'; inputDialogInput.focus(); inputDialogInput.select(); console.log('[showInputDialog] Dialog displayed, input focused.'); let resolved = false; const handleOk = () => { console.log('[showInputDialog] handleOk triggered.'); if(resolved) { console.log('[showInputDialog] handleOk ignored (already resolved).'); return; } resolved = true; const value = inputDialogInput.value; console.log(`[showInputDialog] OK clicked. Input value: "${value}"`); cleanup(); console.log('[showInputDialog] Resolving promise with value:', value); resolve(value); }; const handleCancel = () => { console.log('[showInputDialog] handleCancel triggered.'); if(resolved) { console.log('[showInputDialog] handleCancel ignored (already resolved).'); return; } resolved = true; console.log('[showInputDialog] Cancel clicked or Escape pressed.'); cleanup(); console.log('[showInputDialog] Resolving promise with null.'); resolve(null); }; const handleKeydown = (e) => { if (e.key === 'Enter' || e.key === 'Escape') { console.log(`[showInputDialog] handleKeydown triggered. Key: ${e.key}`); } if (e.key === 'Enter') { handleOk(); } else if (e.key === 'Escape') { handleCancel(); } }; const handleOverlayClick = (e) => { console.log('[showInputDialog] handleOverlayClick triggered. Target:', e.target); if (e.target === inputDialogOverlay) { console.log('[showInputDialog] Overlay background clicked, calling handleCancel.'); handleCancel(); } }; const cleanup = () => { console.log('[showInputDialog] cleanup called.'); inputDialogOkBtn.removeEventListener('click', handleOk); inputDialogCancelBtn.removeEventListener('click', handleCancel); inputDialogInput.removeEventListener('keydown', handleKeydown); inputDialogOverlay.removeEventListener('click', handleOverlayClick); inputDialogOverlay.style.display = 'none'; inputDialogInput.value = ''; console.log('[showInputDialog] Event listeners removed, dialog hidden.'); }; console.log('[showInputDialog] Adding event listeners...'); inputDialogOkBtn.addEventListener('click', handleOk); inputDialogCancelBtn.addEventListener('click', handleCancel); inputDialogInput.addEventListener('keydown', handleKeydown); inputDialogOverlay.addEventListener('click', handleOverlayClick); console.log('[showInputDialog] Event listeners added.'); }); }
 
@@ -320,25 +535,19 @@ function createMenuItem(label, command, disabled = false) { const li = document.
 
 async function handleContextMenuCommand(command, targetPath) {
     console.log(`Context menu command received: ${command}, Target: ${targetPath}`);
-    if (!targetPath && !['refresh-parent'].includes(command)) {
-        showNativeErrorDialog('Erro', 'Alvo inválido ou nenhuma pasta aberta.');
-        return;
-    }
-
+    if (!targetPath && !['refresh-parent'].includes(command)) { showNativeErrorDialog('Erro', 'Alvo inválido ou nenhuma pasta aberta.'); return; }
     let parentDirForAction = targetPath;
     let targetName = targetPath ? getFileName(targetPath) : 'raiz';
     let isTargetDirectory = false;
     const targetElement = targetPath ? fileTreeElement.querySelector(`li[data-file-path="${CSS.escape(targetPath)}"]`) : null;
     let dirToRefresh = currentFolderPath;
-
     if (targetElement) {
         isTargetDirectory = targetElement.dataset.isDirectory === 'true';
         parentDirForAction = targetPath.includes(pathSeparator) ? targetPath.substring(0, targetPath.lastIndexOf(pathSeparator)) : currentFolderPath;
         if (['new-file', 'new-folder'].includes(command) && isTargetDirectory) {
-             parentDirForAction = targetPath;
+            parentDirForAction = targetPath;
         }
          dirToRefresh = (['new-file', 'new-folder'].includes(command) && isTargetDirectory) ? targetPath : parentDirForAction;
-
     } else if (targetPath === currentFolderPath && ['new-file', 'new-folder', 'refresh-parent'].includes(command)) {
         isTargetDirectory = true;
         parentDirForAction = currentFolderPath;
@@ -352,17 +561,13 @@ async function handleContextMenuCommand(command, targetPath) {
         showNativeErrorDialog('Erro', `Alvo Inválido: "${targetPath}"`);
         return;
     }
-
-
     if (!dirToRefresh || dirToRefresh === '') dirToRefresh = currentFolderPath;
     if (!parentDirForAction || parentDirForAction === '') parentDirForAction = currentFolderPath;
     if (!currentFolderPath && command !== 'refresh-parent') {
-         showNativeErrorDialog('Erro', 'Nenhuma Pasta Aberta.');
-         return;
+        showNativeErrorDialog('Erro', 'Nenhuma Pasta Aberta.');
+        return;
     }
-
     console.log(`Determined - Action Parent Dir: ${parentDirForAction}, Dir to Refresh: ${dirToRefresh}, Target Name: ${targetName}, Is Directory: ${isTargetDirectory}`);
-
     try {
         let result;
         switch (command) {
@@ -370,71 +575,51 @@ async function handleContextMenuCommand(command, targetPath) {
                 const newFileName = await showInputDialog(`Novo arquivo em "${getFileName(parentDirForAction) || 'raiz'}":`, 'novo-arquivo.txt');
                 if (newFileName?.trim()) {
                     const newFilePath = parentDirForAction + pathSeparator + newFileName.trim();
-                    console.log(`[Renderer] Attempting to create file at: ${newFilePath}`);
                     result = await window.electronAPI.createFile(newFilePath);
-                    console.log(`[Renderer] Result from createFile:`, result);
                     if (result.error) throw new Error(result.error);
                     refreshSubTree(dirToRefresh);
-                    if (isEditableTextFile(newFilePath) || isSupportedImageView(newFilePath)) await openFile(newFilePath);
-                } else {
-                     console.log("[handleContextMenuCommand] File creation skipped (dialog cancelled).");
-                }
+                    if (isEditableTextFile(newFilePath) || isSupportedImageView(newFilePath)) {
+                       await openFile(newFilePath);
+                    }
+                } else { console.log("[handleContextMenuCommand] File creation skipped (dialog cancelled)."); }
                 break;
-
             case 'new-folder':
                 const newFolderName = await showInputDialog(`Nova pasta em "${getFileName(parentDirForAction) || 'raiz'}":`, 'nova-pasta');
                  if (newFolderName?.trim()) {
                     const newDirPath = parentDirForAction + pathSeparator + newFolderName.trim();
-                    console.log(`[Renderer] Attempting to create directory at: ${newDirPath}`);
                     result = await window.electronAPI.createDirectory(newDirPath);
-                    console.log(`[Renderer] Result from createDirectory:`, result);
                     if (result.error) throw new Error(result.error);
                     refreshSubTree(dirToRefresh);
-                } else {
-                     console.log("[handleContextMenuCommand] Folder creation skipped (dialog cancelled).");
-                }
+                } else { console.log("[handleContextMenuCommand] Folder creation skipped (dialog cancelled)."); }
                 break;
-
             case 'rename':
                  const actualParentDir = targetPath.substring(0, targetPath.lastIndexOf(pathSeparator)) || currentFolderPath;
                  dirToRefresh = actualParentDir || currentFolderPath;
                  const newName = await showInputDialog(`Renomear "${targetName}":`, targetName);
                  if (newName?.trim() && newName.trim() !== targetName) {
                      const newPath = actualParentDir + pathSeparator + newName.trim();
-                     console.log(`[Renderer] Attempting to rename: ${targetPath} -> ${newPath}`);
                      result = await window.electronAPI.renamePath(targetPath, newPath);
-                     console.log(`[Renderer] Result from renamePath:`, result);
                      if (result.error) throw new Error(result.error);
                      await updateStateForRename(targetPath, newPath);
                      refreshSubTree(dirToRefresh);
-                 } else {
-                      console.log("[handleContextMenuCommand] Rename skipped (dialog cancelled or name unchanged).");
-                 }
+                 } else { console.log("[handleContextMenuCommand] Rename skipped (dialog cancelled or name unchanged)."); }
                  break;
-
             case 'delete':
                  const confirmDelete = await showConfirmDialog(`Tem certeza que deseja excluir ${isTargetDirectory ? 'pasta' : 'arquivo'} "${targetName}"?\nEsta ação NÃO pode ser desfeita!`);
                  if (confirmDelete) {
                     const actualParentDirDel = targetPath.substring(0, targetPath.lastIndexOf(pathSeparator)) || currentFolderPath;
                     dirToRefresh = actualParentDirDel || currentFolderPath;
-                    console.log(`[Renderer] Attempting to delete: ${targetPath}`);
                     await closeTabsForPath(targetPath, isTargetDirectory);
                     result = await window.electronAPI.deletePath(targetPath);
-                    console.log(`[Renderer] Result from deletePath:`, result);
                     if (result.error) throw new Error(result.error);
                     refreshSubTree(dirToRefresh);
-                } else {
-                     console.log("[handleContextMenuCommand] Deletion cancelled by user.");
-                }
+                } else { console.log("[handleContextMenuCommand] Deletion cancelled by user."); }
                 break;
-
             case 'refresh-parent':
                 console.log(`[Renderer] Refreshing parent directory: ${dirToRefresh}`);
                 refreshSubTree(dirToRefresh);
                 break;
-
-            default:
-                console.warn(`Comando de menu não implementado: ${command}`);
+            default: console.warn(`Comando de menu não implementado: ${command}`);
         }
     } catch (error) {
         console.error(`[Renderer] Erro ao executar comando '${command}' em '${targetPath || 'raiz'}':`, error);
@@ -443,48 +628,62 @@ async function handleContextMenuCommand(command, targetPath) {
     }
 }
 
-
 async function updateStateForRename(oldPath, newPath) {
     const isDirectory = !(oldPath.includes('.') || newPath.includes('.'));
-    console.log(`Updating state for rename: ${oldPath} -> ${newPath}`);
+    console.log(`Updating state for rename/move: ${oldPath} -> ${newPath}`);
+
     if (isDirectory) {
         const prefix = oldPath + pathSeparator;
-        const pathsToUpdate = Array.from(openFiles.keys()).filter(p => p.startsWith(prefix));
-        console.log(`Updating directory rename state for tabs: ${pathsToUpdate.join(', ')}`);
-        for (const p of pathsToUpdate) {
+        const affectedProblemPaths = Array.from(allProblems.keys()).filter(p => p.startsWith(prefix));
+        for (const p of affectedProblemPaths) {
+            const problems = allProblems.get(p);
+            if (problems) {
+                const newSubPath = newPath + pathSeparator + p.substring(prefix.length);
+                allProblems.delete(p);
+                allProblems.set(newSubPath, problems);
+            }
+        }
+
+        const affectedOpenPaths = Array.from(openFiles.keys()).filter(p => p.startsWith(prefix));
+        console.log(`Updating directory state for tabs: ${affectedOpenPaths.join(', ')}`);
+        for (const p of affectedOpenPaths) {
             const newSubPath = newPath + pathSeparator + p.substring(prefix.length);
             await updateSingleRenamedFileState(p, newSubPath);
         }
+        if (openFiles.has(oldPath)) {
+            await updateSingleRenamedFileState(oldPath, newPath);
+        }
     } else {
-         await updateSingleRenamedFileState(oldPath, newPath);
+        if (allProblems.has(oldPath)) {
+            const problems = allProblems.get(oldPath);
+            allProblems.delete(oldPath);
+            allProblems.set(newPath, problems);
+        }
+        await updateSingleRenamedFileState(oldPath, newPath);
     }
+
     const selectedItem = fileTreeElement.querySelector('li.selected');
     if (selectedItem && selectedItem.dataset.filePath === oldPath) {
         selectFileTreeItem(newPath);
     }
+
+    renderProblemsPanel();
 }
 
 async function updateSingleRenamedFileState(oldPath, newPath) {
-    if (!openFiles.has(oldPath)) {
-        console.warn(`[updateSingle] Estado não encontrado para oldPath: ${oldPath}`);
-        return;
-    }
-
+    if (!openFiles.has(oldPath)) { console.warn(`[updateSingle] Estado não encontrado para oldPath: ${oldPath}`); return; }
     console.log(`[updateSingle] Start: ${oldPath} -> ${newPath}`);
     const fileState = openFiles.get(oldPath);
     const oldModel = editorModels.get(oldPath);
     const viewState = editorViewStates.get(oldPath);
     const wasActive = (activeFilePath === oldPath);
-
     let newModel = null;
 
-
-    if (wasActive && editor) {
+    if (wasActive && editor && editor.getModel() === oldModel) {
         console.log(`[updateSingle] Desvinculando modelo do editor ativo: ${oldPath}`);
         editor.setModel(null);
         currentEditorModel = null;
     }
-
 
     fileState.tabElement.dataset.filePath = newPath;
     fileState.tabElement.title = newPath;
@@ -493,54 +692,37 @@ async function updateSingleRenamedFileState(oldPath, newPath) {
     fileState.tabElement.querySelector('.tab-close-btn').title = `Fechar ${newFileName}`;
     fileState.tabElement.querySelector('.tab-close-btn').setAttribute('aria-label', `Fechar ${newFileName}`);
 
-
     fileState.filePath = newPath;
     fileState.fileName = newFileName;
     const oldLanguage = fileState.language;
     fileState.language = getLanguageForFilePath(newPath);
     const oldFileType = fileState.fileType;
 
-
     let newFileType = 'text';
-    if (isSvgFile(newPath)) {
-        newFileType = 'svg';
-
-    } else if (isSupportedImageView(newPath)) {
-        newFileType = 'image';
-        fileState.svgViewMode = undefined;
-    } else if (isEditableTextFile(newPath)) {
-        newFileType = 'text';
-        fileState.svgViewMode = undefined;
-    } else {
-        newFileType = 'unsupported';
-        fileState.svgViewMode = undefined;
-    }
+    if (isSvgFile(newPath)) { newFileType = 'svg'; }
+    else if (isSupportedImageView(newPath)) { newFileType = 'image'; fileState.svgViewMode = undefined; }
+    else if (isEditableTextFile(newPath)) { newFileType = 'text'; fileState.svgViewMode = undefined; }
+    else { newFileType = 'unsupported'; fileState.svgViewMode = undefined; }
     fileState.fileType = newFileType;
     console.log(`[updateSingle] Novo tipo de arquivo determinado: ${newFileType}`);
-
 
     openFiles.delete(oldPath);
     editorModels.delete(oldPath);
     editorViewStates.delete(oldPath);
     console.log(`[updateSingle] Estado antigo removido dos mapas para: ${oldPath}`);
 
-
     if (newFileType === 'unsupported') {
-        console.warn(`[updateSingle] Renomeado para tipo não suportado: ${newPath}, fechando aba.`);
+        console.warn(`[updateSingle] Renomeado/Movido para tipo não suportado: ${newPath}, fechando aba.`);
         fileState.tabElement.remove();
         oldModel?.dispose();
         if (wasActive) {
             const remainingTabs = Array.from(openFiles.keys());
-            if (remainingTabs.length > 0) {
-                switchToFile(remainingTabs[remainingTabs.length - 1]);
-            } else {
-                clearEditor();
-            }
+            if (remainingTabs.length > 0) { switchToFile(remainingTabs[remainingTabs.length - 1]); }
+            else { clearEditor(); }
         }
         console.log(`[updateSingle] Processamento interrompido para tipo não suportado: ${newPath}`);
         return;
     }
-
 
     if (oldModel && (newFileType === 'text' || newFileType === 'svg')) {
         const newModelUri = monaco.Uri.file(newPath);
@@ -549,45 +731,38 @@ async function updateSingleRenamedFileState(oldPath, newPath) {
         if (existingModelForNewPath && existingModelForNewPath !== oldModel) {
             console.warn("[updateSingle] Modelo para novo caminho já existe. Usando existente, descartando antigo.");
             newModel = existingModelForNewPath;
-        } else if (!existingModelForNewPath) {
+            oldModel.dispose();
+        }
+        else if (!existingModelForNewPath) {
              try {
                 const currentContent = oldModel.getValue();
+                oldModel.dispose(); console.log(`[updateSingle] Modelo antigo descartado para: ${oldPath}`);
                 newModel = monaco.editor.createModel(currentContent, fileState.language, newModelUri);
                 newModel.originalContent = oldModel.originalContent;
                 console.log(`[updateSingle] Novo modelo criado para: ${newPath}`);
              } catch (createError) {
                  console.error(`[updateSingle] Erro ao criar novo modelo para ${newPath}:`, createError);
-                 showNativeErrorDialog("Erro ao Renomear", `Falha ao atualizar o editor para ${newFileName}.`);
+                 showNativeErrorDialog("Erro ao Renomear/Mover", `Falha ao atualizar o editor para ${newFileName}.`);
+                 newModel = null;
              }
         } else {
-             console.warn("[updateSingle] URI do modelo existente coincide com URI antigo - estado inconsistente?");
-              newModel = null;
+            console.warn("[updateSingle] URI do modelo existente coincide com URI antigo - estado inconsistente?");
+            oldModel.dispose();
+            newModel = null;
         }
-         oldModel.dispose();
-         console.log(`[updateSingle] Modelo antigo descartado para: ${oldPath}`);
-
     } else if (oldModel) {
         oldModel.dispose();
         console.log(`[updateSingle] Modelo antigo descartado para ${oldPath} pois novo tipo é ${newFileType}`);
     }
 
-
     openFiles.set(newPath, fileState);
-    if (newModel) {
-        editorModels.set(newPath, newModel);
-        console.log(`[updateSingle] Novo modelo adicionado ao mapa para: ${newPath}`);
-    }
-    if (viewState) {
-        editorViewStates.set(newPath, viewState);
-        console.log(`[updateSingle] View state adicionado ao mapa para: ${newPath}`);
-    }
+    if (newModel) { editorModels.set(newPath, newModel); console.log(`[updateSingle] Novo modelo adicionado ao mapa para: ${newPath}`); }
+    if (viewState) { editorViewStates.set(newPath, viewState); console.log(`[updateSingle] View state adicionado ao mapa para: ${newPath}`); }
     console.log(`[updateSingle] Novo estado adicionado aos mapas para: ${newPath}`);
 
-
     if (wasActive && editor) {
-        console.log(`[updateSingle] Reconectando/atualizando view para arquivo ativo renomeado: ${newPath}`);
+        console.log(`[updateSingle] Reconectando/atualizando view para arquivo ativo renomeado/movido: ${newPath}`);
         activeFilePath = newPath;
-
 
         if (newModel && (newFileType === 'text' || (newFileType === 'svg' && fileState.svgViewMode === 'source'))) {
             currentEditorModel = newModel;
@@ -596,40 +771,31 @@ async function updateSingleRenamedFileState(oldPath, newPath) {
                 editor.restoreViewState(viewState);
                 console.log(`[updateSingle] View state restaurado para: ${newPath}`);
             } else {
-                 editor.revealLine(1);
+                editor.revealLine(1);
             }
             editor.focus();
-
-
-            currentFileInfoElement.textContent = `${newFileName}`;
-            currentFileInfoElement.title = newPath;
-            updateSaveStatus();
-            const currentPos = editor.getPosition();
-            if (currentPos) cursorPositionElement.textContent = `Ln ${currentPos.lineNumber}, Col ${currentPos.column}`;
+            currentFileInfoElement.textContent = `${newFileName}`; currentFileInfoElement.title = newPath; updateSaveStatus();
+            const currentPos = editor.getPosition(); if (currentPos) cursorPositionElement.textContent = `Ln ${currentPos.lineNumber}, Col ${currentPos.column}`;
             imageDimensionsElement.textContent = '';
-             console.log(`[updateSingle] Editor reconectado e focado para: ${newPath}`);
-
-
-        } else if (newFileType === 'image' || (newFileType === 'svg' && fileState.svgViewMode === 'rendered')) {
-             console.log(`[updateSingle] Arquivo ativo renomeado para ${newFileType}, alternando para visualizador via switchToFile.`);
-
-             currentFileInfoElement.textContent = `${newFileName}`;
-             currentFileInfoElement.title = newPath;
-             imageDimensionsElement.textContent = '';
-             cursorPositionElement.textContent = '';
-             updateSaveStatus();
-
-
+            console.log(`[updateSingle] Editor reconectado e focado para: ${newPath}`);
+        }
+        else if (newFileType === 'image' || (newFileType === 'svg' && fileState.svgViewMode === 'rendered')) {
+             console.log(`[updateSingle] Arquivo ativo renomeado/movido para ${newFileType}, alternando para visualizador via switchToFile.`);
+             currentFileInfoElement.textContent = `${newFileName}`; currentFileInfoElement.title = newPath; imageDimensionsElement.textContent = ''; cursorPositionElement.textContent = ''; updateSaveStatus();
              fileState.forceSwitch = true;
              switchToFile(newPath);
-
-        } else {
+        }
+        else {
             console.warn(`[updateSingle] Não é possível reconectar modelo para ${newPath}, tipo ${newFileType} ou modelo é nulo.`);
             clearEditor();
         }
     } else if (wasActive) {
-         console.error("[updateSingle] wasActive é true, mas a instância do editor não existe!");
-         clearEditor();
+        console.error("[updateSingle] wasActive é true, mas a instância do editor não existe!");
+        clearEditor();
+    }
+
+    if (newModel) {
+       updateProblemsForModel(newModel.uri);
     }
 
     console.log(`[updateSingle] End: ${oldPath} -> ${newPath}.`);
@@ -645,40 +811,37 @@ async function closeTabsForPath(targetPath, isDirectory) {
         console.log(`Fechando abas para exclusão/renomeação de diretório: ${pathsToClose.join(', ')}`);
         let activeTabNeedsSwitching = false;
 
+        const pathsIterator = [...pathsToClose];
 
-        for (const p of pathsToClose) {
+        for (const p of pathsIterator) {
             if (p === activeFilePath) {
                 activeTabNeedsSwitching = true;
-
                 if (editor) {
                     clearTimeout(autosaveTimer);
                     editor.setModel(null);
                     currentEditorModel = null;
                     activeFilePath = null;
-                    clearEditor();
-                     console.log(`[closeTabsForPath] Editor limpo pois a aba ativa (${p}) está sendo fechada.`);
+                    console.log(`[closeTabsForPath] Editor model detached for active tab (${p}) being closed.`);
                 }
             }
             removeEditorTab(p);
-            console.log(`[closeTabsForPath] Aba e estado removidos para: ${p}`);
+            console.log(`[closeTabsForPath] Tab and state removed for: ${p}`);
         }
-
 
         if (activeTabNeedsSwitching) {
              const remainingTabs = Array.from(openFiles.keys());
             if (remainingTabs.length > 0) {
-                 console.log("[closeTabsForPath] Alternando para a última aba restante após fechar a ativa.");
+                console.log("[closeTabsForPath] Alternando para a última aba restante após fechar a ativa.");
                 switchToFile(remainingTabs[remainingTabs.length - 1]);
             } else {
-                 console.log("[closeTabsForPath] Nenhuma aba restante após fechar a ativa.");
-
+                console.log("[closeTabsForPath] Nenhuma aba restante após fechar a ativa. Clearing editor.");
+                clearEditor();
             }
         }
     }
 }
 
 async function performSearch() { const searchTerm = searchInput.value.trim(); if (!searchTerm) { showNativeErrorDialog('Pesquisa', 'Digite um termo para pesquisar.'); return; } if (!currentFolderPath) { showNativeErrorDialog('Pesquisa', 'Abra uma pasta antes de pesquisar.'); return; } console.log(`Iniciando busca por "${searchTerm}" em ${currentFolderPath}`); searchStatusElement.textContent = `Buscando por "${searchTerm}"...`; searchResultsContainer.innerHTML = ''; searchButton.disabled = true; currentSearchTerm = searchTerm; try { const result = await window.electronAPI.searchInProject({ searchTerm, folderPath: currentFolderPath }); searchButton.disabled = false; if (result.error) throw new Error(result.error); searchStatusElement.textContent = `${result.results.length} resultado(s) para "${searchTerm}"`; if (result.results.length === 0) { searchResultsContainer.innerHTML = '<li>Nenhum resultado encontrado.</li>'; } else { const resultsByFile = result.results.reduce((acc, match) => { if (!acc[match.filePath]) acc[match.filePath] = []; acc[match.filePath].push(match); return acc; }, {}); for (const filePath in resultsByFile) { const matches = resultsByFile[filePath]; const fileLi = document.createElement('li'); fileLi.classList.add('search-result-file-group'); const fileNameSpan = document.createElement('span'); fileNameSpan.className = 'search-result-filepath'; fileNameSpan.textContent = getFileName(filePath); fileNameSpan.title = filePath; const canOpenFile = isEditableTextFile(filePath) || isSupportedImageView(filePath); if (canOpenFile) { fileNameSpan.addEventListener('click', () => openFile(filePath)); fileNameSpan.style.cursor = 'pointer'; } else { fileNameSpan.style.cursor = 'default'; fileNameSpan.title += ' (não pode ser aberto)'; } fileLi.appendChild(fileNameSpan); const matchesUl = document.createElement('ul'); matches.forEach(match => { const matchLi = document.createElement('li'); matchLi.className = 'search-result-item'; matchLi.title = `Linha ${match.lineNumber}`; const lineSpan = document.createElement('span'); lineSpan.className = 'search-result-line'; const regex = new RegExp(`(${escapeRegExp(currentSearchTerm)})`, 'gi'); lineSpan.innerHTML = match.lineContent.replace(regex, '<span class="match">$1</span>'); matchLi.appendChild(lineSpan); if (canOpenFile) { matchLi.style.cursor = 'pointer'; matchLi.addEventListener('click', () => { openFile(match.filePath).then(() => { if (editor && activeFilePath === match.filePath && editorContainer.style.display !== 'none') { editor.revealLineInCenter(match.lineNumber, monaco.editor.ScrollType.Smooth); editor.setPosition({ lineNumber: match.lineNumber, column: 1 }); editor.focus(); } }); }); } else { matchLi.style.cursor = 'default'; } matchesUl.appendChild(matchLi); }); fileLi.appendChild(matchesUl); searchResultsContainer.appendChild(fileLi); } } } catch (error) { console.error("Erro na busca:", error); searchStatusElement.textContent = `Erro na busca: ${error.message}`; searchResultsContainer.innerHTML = `<li class="error">Falha ao buscar: ${error.message}</li>`; showNativeErrorDialog('Erro na Busca', `Ocorreu um erro: ${error.message}`); searchButton.disabled = false; } }
-
 
 function appendCommandOutput(text) { if (commandOutputElement) { commandOutputElement.textContent += text; commandOutputElement.parentElement.scrollTop = commandOutputElement.parentElement.scrollHeight; } }
 function clearCommandOutput() { if (commandOutputElement) commandOutputElement.textContent = ''; }
@@ -687,15 +850,12 @@ function showCommandPanel() { commandPanel.classList.add('visible'); isCommandPa
 function hideCommandPanel() { commandPanel.classList.remove('visible'); isCommandPanelVisible = false; toggleCommandPanelBtn.classList.remove('active'); editor?.focus(); }
 function toggleCommandPanel() { if (isCommandPanelVisible) hideCommandPanel(); else showCommandPanel(); }
 
-
-function showSidebarPanel(targetPanelId) { sidebarTabButtons.forEach(btn => btn.classList.remove('active')); sidebarPanels.forEach(panel => panel.classList.remove('active')); const targetButton = document.querySelector(`.sidebar-tab-btn[data-target="${targetPanelId}"]`); const targetPanel = document.getElementById(targetPanelId); if (targetButton && targetPanel) { targetButton.classList.add('active'); targetPanel.classList.add('active'); if (targetPanelId === 'search-panel') searchInput.focus(); } }
-
+function showSidebarPanel(targetPanelId) { sidebarTabButtons.forEach(btn => btn.classList.remove('active')); sidebarPanels.forEach(panel => panel.classList.remove('active')); const targetButton = document.querySelector(`.sidebar-tab-btn[data-target="${targetPanelId}"]`); const targetPanel = document.getElementById(targetPanelId); if (targetButton && targetPanel) { targetButton.classList.add('active'); targetPanel.classList.add('active'); if (targetPanelId === 'search-panel') searchInput.focus(); else if (targetPanelId === 'problems-panel') { } } }
 
 function updateLiveServerUI(status) {
     isLiveServerRunning = status.isRunning;
     currentLiveServerPort = status.port;
     currentLiveServerFolder = status.folderPath;
-
     if (status.isRunning && status.port) {
         liveServerBtn.classList.add('active');
         liveServerBtn.title = `Parar Live Server (Porta: ${status.port})`;
@@ -709,84 +869,279 @@ function updateLiveServerUI(status) {
         liveServerBtn.innerHTML = `<i class="mdi mdi-play-circle-outline"></i> Go Live`;
         liveServerStatusElement.textContent = '';
         liveServerStatusElement.title = '';
-
         liveServerBtn.disabled = !currentFolderPath;
-
          if (status.error) {
              liveServerStatusElement.textContent = `Erro: ${status.error}`;
              liveServerStatusElement.style.color = 'var(--error-color)';
-             setTimeout(() => {
-                 if (!isLiveServerRunning) {
-                    liveServerStatusElement.textContent = '';
-                    liveServerStatusElement.style.color = '';
-                 }
-             }, 5000);
-         } else {
-              liveServerStatusElement.style.color = '';
-         }
+             setTimeout(() => { if (!isLiveServerRunning) { liveServerStatusElement.textContent = ''; liveServerStatusElement.style.color = ''; } }, 5000);
+         } else { liveServerStatusElement.style.color = ''; }
     }
 }
 
 async function startLiveServer() {
-    if (!currentFolderPath) {
-        showNativeErrorDialog("Live Server", "Abra uma pasta primeiro.");
-        return;
-    }
-    if (isLiveServerRunning) {
-        console.warn("Tentativa de iniciar Live Server quando já está rodando.");
-        return;
-    }
-
+    if (!currentFolderPath) { showNativeErrorDialog("Live Server", "Abra uma pasta primeiro."); return; }
+    if (isLiveServerRunning) { console.warn("Tentativa de iniciar Live Server quando já está rodando."); return; }
     console.log(`Solicitando início do Live Server para: ${currentFolderPath}`);
-    liveServerBtn.disabled = true;
-    liveServerStatusElement.textContent = "Iniciando...";
+    liveServerBtn.disabled = true; liveServerStatusElement.textContent = "Iniciando...";
     try {
         const result = await window.electronAPI.startLiveServer(currentFolderPath);
-        if (!result.success) {
-            throw new Error(result.error || "Falha desconhecida ao iniciar.");
-        }
-
+        if (!result.success) { throw new Error(result.error || "Falha desconhecida ao iniciar."); }
         console.log(`Live Server iniciado com sucesso na porta ${result.port}`);
     } catch (error) {
         console.error("Erro ao iniciar Live Server:", error);
         showNativeErrorDialog("Erro Live Server", `Não foi possível iniciar: ${error.message}`);
         updateLiveServerUI({ isRunning: false, port: null, folderPath: currentFolderPath, error: error.message });
     } finally {
-       liveServerBtn.disabled = !currentFolderPath;
+         liveServerBtn.disabled = !currentFolderPath;
     }
 }
 
 async function stopLiveServer() {
-    if (!isLiveServerRunning) {
-        console.warn("Tentativa de parar Live Server quando não está rodando.");
-        return;
-    }
+    if (!isLiveServerRunning) { console.warn("Tentativa de parar Live Server quando não está rodando."); return; }
     console.log("Solicitando parada do Live Server...");
-    liveServerBtn.disabled = true;
-    liveServerStatusElement.textContent = "Parando...";
+    liveServerBtn.disabled = true; liveServerStatusElement.textContent = "Parando...";
     try {
         const result = await window.electronAPI.stopLiveServer();
-        if (!result.success) {
-            throw new Error(result.error || "Falha desconhecida ao parar.");
-        }
-
+        if (!result.success) { throw new Error(result.error || "Falha desconhecida ao parar."); }
         console.log("Live Server parado com sucesso.");
     } catch (error) {
         console.error("Erro ao parar Live Server:", error);
         showNativeErrorDialog("Erro Live Server", `Não foi possível parar: ${error.message}`);
-
          updateLiveServerUI({ isRunning: false, port: currentLiveServerPort, folderPath: currentLiveServerFolder, error: error.message });
     } finally {
         liveServerBtn.disabled = !currentFolderPath;
     }
 }
 
+function initializeProblemsListener() {
+    if (!monaco || problemsMarkerListener) return;
+
+    problemsMarkerListener = monaco.editor.onDidChangeMarkers((uris) => {
+        console.log("Markers changed for URIs:", uris.map(u => u.toString()));
+        let problemsChanged = false;
+        uris.forEach(uri => {
+            if (updateProblemsForModel(uri)) {
+                problemsChanged = true;
+            }
+        });
+        if (problemsChanged) {
+            renderProblemsPanel();
+        }
+    });
+    console.log("Problems marker listener initialized.");
+}
+
+function updateProblemsForModel(modelUri) {
+    if (!monaco || !modelUri) return false;
+
+    const model = monaco.editor.getModel(modelUri);
+    const filePath = modelUri.fsPath;
+
+    if (!model || !editorModels.has(filePath)) {
+        if (allProblems.has(filePath)) {
+            allProblems.delete(filePath);
+            console.log(`Cleared problems for removed/unmanaged model: ${filePath}`);
+            return true;
+        }
+        return false;
+    }
+
+    const markers = monaco.editor.getModelMarkers({ resource: modelUri });
+    const relevantMarkers = markers.filter(m => m.severity >= monaco.MarkerSeverity.Info);
+
+    const newProblems = relevantMarkers.map(marker => ({
+        filePath: filePath,
+        fileName: getFileName(filePath),
+        severity: marker.severity,
+        message: marker.message,
+        startLineNumber: marker.startLineNumber,
+        startColumn: marker.startColumn,
+        endLineNumber: marker.endLineNumber,
+        endColumn: marker.endColumn,
+        source: marker.source || 'Linter',
+    }));
+
+    const existingProblems = allProblems.get(filePath) || [];
+    const changed = newProblems.length !== existingProblems.length ||
+                    JSON.stringify(newProblems) !== JSON.stringify(existingProblems);
+
+    if (changed) {
+        console.log(`Problems updated for ${filePath}: ${newProblems.length} problems.`);
+        if (newProblems.length > 0) {
+            allProblems.set(filePath, newProblems);
+        } else {
+            allProblems.delete(filePath);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+
+function renderProblemsPanel() {
+    if (!problemsListElement || !problemsStatusElement || !problemsCountBadge) return;
+
+    problemsListElement.innerHTML = '';
+    let totalProblems = 0;
+    let totalErrors = 0;
+    let totalWarnings = 0;
+
+    if (allProblems.size === 0) {
+        problemsStatusElement.textContent = 'Nenhum problema detectado.';
+        problemsListElement.innerHTML = '<li class="no-problems">Nenhum problema encontrado nos arquivos abertos.</li>';
+        problemsCountBadge.textContent = '0';
+        problemsCountBadge.style.display = 'none';
+        problemsCountBadge.className = 'badge';
+        return;
+    }
+
+    const sortedFilePaths = Array.from(allProblems.keys()).sort((a, b) => a.localeCompare(b));
+
+    sortedFilePaths.forEach(filePath => {
+        const problems = allProblems.get(filePath);
+        if (!problems || problems.length === 0) return;
+
+        const fileGroupLi = document.createElement('li');
+        fileGroupLi.className = 'problem-file-group';
+
+        const fileNameSpan = document.createElement('span');
+        fileNameSpan.textContent = getFileName(filePath);
+        fileNameSpan.title = filePath;
+        fileGroupLi.appendChild(fileNameSpan);
+
+        const problemsUl = document.createElement('ul');
+
+        problems.sort((a, b) => a.startLineNumber - b.startLineNumber || a.startColumn - b.startColumn);
+
+        problems.forEach(problem => {
+            totalProblems++;
+            const problemLi = document.createElement('li');
+            problemLi.className = 'problem-item';
+            problemLi.dataset.filePath = problem.filePath;
+            problemLi.dataset.line = problem.startLineNumber;
+            problemLi.dataset.column = problem.startColumn;
+            problemLi.title = `Ir para ${getFileName(problem.filePath)} linha ${problem.startLineNumber}`;
+
+            const icon = document.createElement('i');
+            icon.className = 'problem-icon mdi';
+            let severityClass = '';
+            let severityIcon = '';
+
+            switch (problem.severity) {
+                case monaco.MarkerSeverity.Error:
+                    severityClass = 'error';
+                    severityIcon = 'mdi-close-circle-outline';
+                    totalErrors++;
+                    break;
+                case monaco.MarkerSeverity.Warning:
+                    severityClass = 'warning';
+                    severityIcon = 'mdi-alert-outline';
+                    totalWarnings++;
+                    break;
+                case monaco.MarkerSeverity.Info:
+                    severityClass = 'info';
+                    severityIcon = 'mdi-information-outline';
+                    break;
+                case monaco.MarkerSeverity.Hint:
+                default:
+                    severityClass = 'hint';
+                    severityIcon = 'mdi-lightbulb-on-outline';
+                    break;
+            }
+            icon.classList.add(severityClass, severityIcon);
+            problemLi.appendChild(icon);
+
+            const messageSpan = document.createElement('span');
+            messageSpan.className = 'problem-message';
+            messageSpan.textContent = problem.message;
+            problemLi.appendChild(messageSpan);
+
+            const locationSpan = document.createElement('span');
+            locationSpan.className = 'problem-location';
+            locationSpan.textContent = `[Ln ${problem.startLineNumber}, Col ${problem.startColumn}]`;
+            problemLi.appendChild(locationSpan);
+
+            problemLi.addEventListener('click', () => {
+                navigateToProblem(
+                    problem.filePath,
+                    problem.startLineNumber,
+                    problem.startColumn
+                );
+            });
+
+            problemsUl.appendChild(problemLi);
+        });
+
+        fileGroupLi.appendChild(problemsUl);
+        problemsListElement.appendChild(fileGroupLi);
+    });
+
+    let statusText = '';
+    if (totalErrors > 0 && totalWarnings > 0) {
+        statusText = `${totalErrors} Erro(s), ${totalWarnings} Aviso(s)`;
+    } else if (totalErrors > 0) {
+        statusText = `${totalErrors} Erro(s)`;
+    } else if (totalWarnings > 0) {
+        statusText = `${totalWarnings} Aviso(s)`;
+    } else {
+         const infoHintCount = totalProblems - totalErrors - totalWarnings;
+         if (infoHintCount > 0) statusText = `${infoHintCount} Problema(s) Informativo(s)`;
+         else statusText = 'Nenhum problema detectado.';
+    }
+    problemsStatusElement.textContent = statusText;
+
+    problemsCountBadge.textContent = totalProblems.toString();
+    problemsCountBadge.style.display = totalProblems > 0 ? 'inline-block' : 'none';
+
+    problemsCountBadge.className = 'badge';
+    if (totalErrors > 0) {
+        problemsCountBadge.classList.add('errors');
+    } else if (totalWarnings > 0) {
+        problemsCountBadge.classList.add('warnings');
+    }
+
+}
+
+async function navigateToProblem(filePath, lineNumber, columnNumber) {
+    console.log(`Navigating to problem: ${filePath} L${lineNumber} C${columnNumber}`);
+    try {
+        if (!openFiles.has(filePath) || openFiles.get(filePath).fileType === 'image' || (openFiles.get(filePath).fileType === 'svg' && openFiles.get(filePath).svgViewMode === 'rendered') ) {
+            await openFile(filePath);
+            const fileState = openFiles.get(filePath);
+            if (fileState?.fileType === 'svg' && fileState.svgViewMode !== 'source') {
+                fileState.svgViewMode = 'source';
+                fileState.forceSwitch = true;
+                switchToFile(filePath);
+            }
+        } else {
+            switchToFile(filePath);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        if (editor && activeFilePath === filePath && editorContainer.style.display !== 'none' && editor.getModel() === editorModels.get(filePath)) {
+            editor.revealLineInCenter(lineNumber, monaco.editor.ScrollType.Smooth);
+            editor.setPosition({ lineNumber: lineNumber, column: columnNumber });
+            editor.focus();
+        } else {
+             console.warn(`Could not navigate to problem: Editor not ready or wrong file active. Target: ${filePath}, Active: ${activeFilePath}`);
+             if (editor && editorContainer.style.display !== 'none') editor.focus();
+        }
+    } catch (error) {
+        console.error("Error navigating to problem:", error);
+        showNativeErrorDialog("Erro de Navegação", `Não foi possível ir para o problema em ${getFileName(filePath)}: ${error.message}`);
+    }
+}
 
 openFolderBtn.addEventListener('click', async () => { try { const folderPath = await window.electronAPI.openDirectoryDialog(); if (folderPath) await loadDirectory(folderPath); } catch (error) { console.error("Erro ao abrir diálogo:", error); showNativeErrorDialog('Erro', `Falha ao selecionar pasta: ${error.message}`); } });
 fileTreeElement.addEventListener('contextmenu', (e) => { if (e.target === fileTreeElement) { e.preventDefault(); e.stopPropagation(); showContextMenu(e, 'tree-empty', { path: currentFolderPath, isDirectory: true }); } });
 newFileBtn.addEventListener('click', () => { if(!newFileBtn.disabled) handleContextMenuCommand('new-file', currentFolderPath); });
 newFolderBtn.addEventListener('click', () => { if(!newFolderBtn.disabled) handleContextMenuCommand('new-folder', currentFolderPath); });
-window.addEventListener('keydown', (e) => { const isCtrlOrMeta = e.ctrlKey || e.metaKey; if (isCtrlOrMeta && e.key === 's') { e.preventDefault(); saveFile(); } else if (isCtrlOrMeta && e.key === 'o') { e.preventDefault(); openFolderBtn.click(); } else if (isCtrlOrMeta && e.key === '`') { e.preventDefault(); toggleCommandPanel(); } else if (isCtrlOrMeta && e.key === 'w') { e.preventDefault(); if (activeFilePath) closeFile(activeFilePath); } else if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); showSidebarPanel('search-panel'); } else if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); showSidebarPanel('file-tree-panel'); } else if (e.key === 'Escape') { if (inputDialogOverlay.style.display === 'flex') {  } else if (confirmDialogOverlay.style.display === 'flex') {  } else if (contextMenuElement.style.display === 'block') { hideContextMenu(); } else if (isCommandPanelVisible) { hideCommandPanel(); } } });
+window.addEventListener('keydown', (e) => { const isCtrlOrMeta = e.ctrlKey || e.metaKey; if (isCtrlOrMeta && e.key === 's') { e.preventDefault(); saveFile(); } else if (isCtrlOrMeta && e.key === 'o') { e.preventDefault(); openFolderBtn.click(); } else if (isCtrlOrMeta && e.key === '`') { e.preventDefault(); toggleCommandPanel(); } else if (isCtrlOrMeta && e.key === 'w') { e.preventDefault(); if (activeFilePath) closeFile(activeFilePath); } else if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); showSidebarPanel('search-panel'); } else if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); showSidebarPanel('file-tree-panel');
+    } else if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'm') {
+         e.preventDefault(); showSidebarPanel('problems-panel');
+    } else if (e.key === 'Escape') { if (inputDialogOverlay.style.display === 'flex') {} else if (confirmDialogOverlay.style.display === 'flex') {} else if (contextMenuElement.style.display === 'block') { hideContextMenu(); } else if (isCommandPanelVisible) { hideCommandPanel(); } } });
 sidebarTabButtons.forEach(button => button.addEventListener('click', () => showSidebarPanel(button.dataset.target)));
 searchButton.addEventListener('click', performSearch);
 searchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') performSearch(); });
@@ -799,40 +1154,36 @@ window.electronAPI.onCommandError(errorMsg => appendCommandOutput(`\n[ERRO] ${er
 window.electronAPI.onCommandExit(exitCode => { appendCommandOutput(`\n[Processo finalizado com código: ${exitCode}]\n`); commandInputElement.disabled = false; commandInputElement.focus(); });
 document.addEventListener('click', (e) => { if (contextMenuElement.style.display === 'block' && !contextMenuElement.contains(e.target)) hideContextMenu(); }, false);
 svgToggleViewBtn.addEventListener('click', () => { if (!activeFilePath) return; const fileState = openFiles.get(activeFilePath); if (!fileState || fileState.fileType !== 'svg') return; fileState.svgViewMode = (fileState.svgViewMode === 'rendered') ? 'source' : 'rendered'; fileState.forceSwitch = true; switchToFile(activeFilePath); });
-
-
-liveServerBtn.addEventListener('click', () => {
-    if (isLiveServerRunning) {
-        stopLiveServer();
-    } else {
-        startLiveServer();
-    }
-});
-
-
-window.electronAPI.onLiveServerStatusUpdate((status) => {
-    console.log("[Renderer] Recebido Live Server Status Update:", status);
-    updateLiveServerUI(status);
-});
-
+liveServerBtn.addEventListener('click', () => { if (isLiveServerRunning) { stopLiveServer(); } else { startLiveServer(); } });
+window.electronAPI.onLiveServerStatusUpdate((status) => { console.log("[Renderer] Recebido Live Server Status Update:", status); updateLiveServerUI(status); });
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        pathSeparator = await window.electronAPI.getPathSeparator();
-        console.log("Separador de caminho:", pathSeparator);
-        newFileBtn.disabled = true;
-        newFolderBtn.disabled = true;
-        liveServerBtn.disabled = true;
+        pathSeparator = await window.electronAPI.getPathSeparator(); console.log("Separador de caminho:", pathSeparator);
+        newFileBtn.disabled = true; newFolderBtn.disabled = true; liveServerBtn.disabled = true;
         await loadMonaco();
         initializeEditor();
         clearEditor();
+        renderProblemsPanel();
         showSidebarPanel('file-tree-panel');
-
-
-        const initialStatus = await window.electronAPI.getLiveServerStatus();
-        console.log("Initial Live Server Status:", initialStatus);
-        updateLiveServerUI(initialStatus);
-
+        const fileTreePanel = document.getElementById('file-tree-panel');
+        const fileTreeUL = document.getElementById('file-tree');
+        if (fileTreePanel) {
+             fileTreePanel.addEventListener('dragover', handleDragOver);
+             fileTreePanel.addEventListener('dragleave', handleDragLeave);
+             fileTreePanel.addEventListener('drop', handleDrop);
+        }
+        if (fileTreeUL) {
+            fileTreeUL.addEventListener('dragstart', (event) => {
+                const listItem = event.target.closest('li[draggable="true"]');
+                if (!listItem) { console.log("dragstart ignored: not on a draggable li"); return; }
+                const itemPath = listItem.dataset.filePath;
+                if(itemPath) { handleDragStartLogic(event, itemPath, listItem); }
+                else { console.error("Draggable LI found, but missing filePath dataset!", listItem); }
+            });
+             fileTreeUL.addEventListener('dragend', (event) => { handleDragEnd(event); });
+        } else { console.error("Could not find #file-tree element to attach delegated listeners."); }
+        const initialStatus = await window.electronAPI.getLiveServerStatus(); console.log("Initial Live Server Status:", initialStatus); updateLiveServerUI(initialStatus);
         console.log("Lumen IDE inicializado com sucesso.");
     } catch (error) {
         console.error("Falha crítica na inicialização do Renderer:", error);

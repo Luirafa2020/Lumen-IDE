@@ -1,6 +1,3 @@
-/* style.css (Completo e Funcional - Com Input, Confirmation Dialog, Ícones MDI e Live Server) */
-
-/* IMPORTANTE: Certifique-se de que a fonte Material Design Icons (MDI) esteja incluída */
 @import url('node_modules/@mdi/font/css/materialdesignicons.min.css');
 
 :root {
@@ -30,13 +27,12 @@
     --error-color: #f44747;
     --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --editor-font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
-    --tree-indentation: 15px; /* Increased slightly for better visual spacing */
+    --tree-indentation: 15px;
     --scrollbar-bg: var(--sidebar-bg);
     --scrollbar-thumb-bg: #555;
     --scrollbar-thumb-hover-bg: #777;
 }
 
-/* --- Gerais --- */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; font-family: var(--font-family); background-color: var(--bg-color); color: var(--text-color); font-size: 14px; }
 .container { display: flex; height: 100vh; }
@@ -49,7 +45,6 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font-family); ba
 ::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover-bg); }
 * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb-bg) var(--scrollbar-bg); }
 
-/* --- Sidebar --- */
 .sidebar-header { padding: 10px 15px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
 #open-folder-btn { display: block; width: 100%; padding: 8px 12px; background-color: var(--accent-color); color: var(--button-text-color); border: none; border-radius: 3px; cursor: pointer; font-size: 14px; margin-bottom: 10px; transition: background-color 0.2s ease; }
 #open-folder-btn:hover { background-color: #005a9e; }
@@ -66,19 +61,19 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font-family); ba
 .sidebar-panel { display: none; flex-grow: 1; overflow-y: auto; overflow-x: hidden; }
 .sidebar-panel.active { display: flex; flex-direction: column; }
 
-/* File Tree */
 #file-tree-panel { padding: 5px 0; }
 #file-tree { list-style: none; padding: 0; margin: 0; }
 #file-tree li { padding: 0; margin: 0; list-style: none; position: relative; }
 .tree-item-content { display: flex; align-items: center; padding: 4px 10px; cursor: pointer; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; border-radius: 3px; }
-#file-tree li > .tree-item-content { padding-left: calc(5px + var(--depth, 0) * var(--tree-indentation)); } /* Dynamic padding */
+#file-tree li > .tree-item-content { padding-left: calc(5px + var(--depth, 0) * var(--tree-indentation)); }
 #file-tree li > .tree-item-content:hover { background-color: var(--hover-bg); }
 #file-tree li.selected > .tree-item-content { background-color: var(--active-bg); color: white; }
 #file-tree li.selected > .tree-item-content:hover { background-color: var(--active-bg); }
 #file-tree li > ul { list-style: none; padding: 0; margin: 0; }
 #file-tree .placeholder, #file-tree li > ul > .placeholder { color: var(--text-secondary-color); font-style: italic; padding: 4px 10px 4px 15px; cursor: default; white-space: normal; }
 #file-tree .error, #file-tree li > ul > .error { color: var(--error-color); }
-#file-tree li > ul > .placeholder, #file-tree li > ul > .error { padding-left: calc(15px + var(--tree-indentation)); }
+#file-tree li > ul > .placeholder, #file-tree li > ul > .error { padding-left: calc(var(--tree-indentation) * (var(--depth, 0) + 1)); } /* Corrected placeholder padding */
+
 
 .expand-icon-container { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-right: 4px; }
 .expand-icon { display: inline-block; width: 12px; height: 12px; background-size: contain; background-repeat: no-repeat; background-position: center; filter: invert(60%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(100%) contrast(80%); transition: transform 0.1s ease-in-out; background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z"/></svg>'); }
@@ -86,7 +81,6 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font-family); ba
 #file-tree li.loading > .tree-item-content .expand-icon { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="bi bi-arrow-repeat"><path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/><path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.5A.5.5 0 0 1 12 6.5V3.5a.5.5 0 0 1 .5-.5H16a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5h-1.517A6.002 6.002 0 0 1 8 3zM1.083 9a6.002 6.002 0 0 1 10.834 3.182A.5.5 0 1 1 11.229 13a5 5 0 0 0-9.458-1.957A.5.5 0 0 1 2 10.5V13.5a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 .5-.5h1.517z"/></svg>'); animation: spin 1s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-/* MDI Icons */
 .tree-icon { display: inline-block; width: 1.2em; height: 1.2em; margin-right: 6px; color: var(--text-secondary-color); flex-shrink: 0; font-family: 'Material Design Icons'; font-size: 16px; line-height: 1; text-align: center; vertical-align: middle; }
 #file-tree li.selected .tree-icon { color: white; }
 .tree-icon.mdi-language-html5 { color: #E44D26; }
@@ -107,7 +101,6 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font-family); ba
 .tree-icon.mdi-svg { color: #FFB13B; }
 .tree-icon.mdi-folder { color: #77a6f7; }
 
-/* Search Panel */
 #search-panel { height: 100%; }
 .search-input-container { display: flex; padding: 10px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
 #search-input { flex-grow: 1; padding: 6px 8px; background-color: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 3px 0 0 3px; font-size: 13px; }
@@ -128,7 +121,6 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font-family); ba
 #search-results .search-result-line .match { background-color: rgba(255, 255, 0, 0.3); color: var(--text-color); border-radius: 2px; outline: 1px solid rgba(255, 255, 0, 0.4); }
 #search-results .error { color: var(--error-color); padding: 5px; }
 
-/* --- Editor Area --- */
 #editor-tabs-container { display: flex; background-color: var(--tab-inactive-bg); flex-shrink: 0; overflow-x: auto; border-bottom: 1px solid var(--tab-border); }
 #editor-tabs-container::-webkit-scrollbar { height: 4px; }
 #editor-tabs-container::-webkit-scrollbar-thumb { background-color: var(--scrollbar-thumb-bg); border-radius: 2px; }
@@ -157,104 +149,24 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font-family); ba
 #image-viewer-img { display: block; max-width: 100%; height: auto; object-fit: contain; margin: auto; flex-grow: 1; min-height: 0; }
 #image-viewer-error { color: var(--error-color); text-align: center; margin: auto; }
 
-/* --- Status Bar --- */
-#status-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 10px; /* Reduced padding */
-    background-color: var(--sidebar-bg);
-    border-top: 1px solid var(--border-color);
-    font-size: 12px;
-    color: var(--text-secondary-color);
-    height: 28px; /* Slightly taller for icons */
-    flex-shrink: 0;
-    user-select: none;
-}
-
-.status-left, .status-right {
-    display: flex;
-    align-items: center;
-    gap: 10px; /* Adjusted gap */
-}
+#status-bar { display: flex; justify-content: space-between; align-items: center; padding: 0 10px; background-color: var(--sidebar-bg); border-top: 1px solid var(--border-color); font-size: 12px; color: var(--text-secondary-color); height: 28px; flex-shrink: 0; user-select: none; }
+.status-left, .status-right { display: flex; align-items: center; gap: 10px; }
 #current-file-info { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
 #cursor-position { min-width: 70px; text-align: right; }
 #image-dimensions { min-width: 80px; }
 #save-status { font-style: italic; min-width: 70px; text-align: right; }
+#live-server-status { font-size: 12px; color: var(--text-secondary-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
+#live-server-status[style*="color: var(--error-color)"] { color: var(--error-color); font-weight: bold; }
+.status-bar-button { padding: 3px 8px; background-color: transparent; color: var(--text-secondary-color); border: 1px solid transparent; border-radius: 3px; cursor: pointer; font-size: 12px; transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; display: inline-flex; align-items: center; gap: 5px; line-height: 1; }
+.status-bar-button:hover:not(:disabled) { background-color: var(--button-hover-bg); color: var(--button-text-color); }
+.status-bar-button:disabled { opacity: 0.5; cursor: not-allowed; background-color: transparent !important; color: var(--text-secondary-color) !important; border-color: transparent !important; }
+#live-server-btn.active { background-color: var(--accent-color); color: white; }
+#live-server-btn.active:hover { background-color: #005a9e; }
+#toggle-command-panel-btn.active { background-color: var(--accent-color); color: white; }
+#toggle-command-panel-btn.active:hover { background-color: #005a9e; }
+#live-server-btn .mdi, #toggle-command-panel-btn .mdi { font-size: 16px; line-height: 1; }
 
-#live-server-status { /* Style for the status text */
-    font-size: 12px;
-    color: var(--text-secondary-color);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 250px;
-}
-#live-server-status[style*="color: var(--error-color)"] { /* Style for error color */
-    color: var(--error-color);
-    font-weight: bold;
-}
-
-/* Generic style for buttons in status bar */
-.status-bar-button {
-    padding: 3px 8px; /* Slightly reduced padding */
-    background-color: transparent; /* Make transparent by default */
-    color: var(--text-secondary-color);
-    border: 1px solid transparent; /* Transparent border */
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 12px;
-    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-    display: inline-flex; /* Align icon and text */
-    align-items: center;
-    gap: 5px; /* Space between icon and text */
-    line-height: 1; /* Ensure consistent height */
-}
-
-.status-bar-button:hover:not(:disabled) {
-    background-color: var(--button-hover-bg);
-    color: var(--button-text-color);
-    /* border-color: var(--border-color); */ /* Optional: add border on hover */
-}
-
-.status-bar-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-     background-color: transparent !important; /* Ensure disabled is transparent */
-     color: var(--text-secondary-color) !important;
-     border-color: transparent !important;
-}
-
-/* Specific style for the live server button's active state */
-#live-server-btn.active {
-    background-color: var(--accent-color);
-    color: white;
-    /* border-color: var(--accent-color); */ /* Optional: border when active */
-}
-#live-server-btn.active:hover {
-    background-color: #005a9e; /* Darker accent on hover when active */
-    /* border-color: #005a9e; */
-}
-
-/* Make Command Panel button look like Live Server button */
-#toggle-command-panel-btn.active {
-    background-color: var(--accent-color);
-    color: white;
-}
-#toggle-command-panel-btn.active:hover {
-    background-color: #005a9e;
-}
-
-
-#live-server-btn .mdi,
-#toggle-command-panel-btn .mdi {
-    font-size: 16px; /* Adjust icon size if needed */
-    line-height: 1;
-}
-
-
-/* --- Command Panel --- */
-#command-panel { position: absolute; bottom: 28px; /* Adjusted for status bar height */ left: 0; width: 100%; height: 250px; background-color: var(--command-panel-bg); border-top: 1px solid var(--border-color); display: none; flex-direction: column; resize: vertical; overflow: hidden; min-height: 60px; z-index: 20; }
+#command-panel { position: absolute; bottom: 28px; left: 0; width: 100%; height: 250px; background-color: var(--command-panel-bg); border-top: 1px solid var(--border-color); display: none; flex-direction: column; resize: vertical; overflow: hidden; min-height: 60px; z-index: 20; }
 #command-panel.visible { display: flex; }
 #command-panel::before { content: ''; position: absolute; top: -3px; left: 0; width: 100%; height: 6px; cursor: row-resize; z-index: 21; }
 #command-output-container { flex-grow: 1; overflow-y: auto; padding: 8px 10px; font-family: var(--editor-font-family); font-size: 13px; color: var(--text-color); line-height: 1.5; }
@@ -268,7 +180,6 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font-family); ba
 #close-command-panel-btn { position: absolute; top: 5px; right: 10px; padding: 1px 6px; font-size: 16px; background-color: transparent; color: var(--text-secondary-color); border: none; border-radius: 3px; cursor: pointer; transition: background-color 0.2s, color 0.2s; z-index: 22; }
 #close-command-panel-btn:hover { background-color: var(--hover-bg); color: var(--text-color); }
 
-/* --- Context Menu --- */
 .context-menu { position: fixed; background-color: #3c3c3c; border: 1px solid var(--border-color); border-radius: 4px; padding: 5px 0; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); z-index: 1000; min-width: 180px; display: none; }
 .context-menu ul { list-style: none; padding: 0; margin: 0; }
 .context-menu li { padding: 8px 15px; cursor: pointer; font-size: 13px; color: var(--text-color); white-space: nowrap; }
@@ -276,7 +187,6 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font-family); ba
 .context-menu li.separator { height: 1px; background-color: var(--border-color); margin: 5px 0; padding: 0; cursor: default; }
 .context-menu li.disabled { color: var(--text-secondary-color); cursor: not-allowed; opacity: 0.6; }
 
-/* --- Dialogs (Input & Confirmation) --- */
 .dialog-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--dialog-overlay-bg); display: flex; align-items: center; justify-content: center; z-index: 1001; }
 .dialog-box { background-color: var(--dialog-bg); padding: 20px 25px; border-radius: 5px; border: 1px solid var(--border-color); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4); min-width: 300px; max-width: 500px; color: var(--text-color); }
 #input-dialog label { display: block; margin-bottom: 8px; font-size: 14px; color: var(--text-color); }
@@ -289,3 +199,7 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font-family); ba
 .dialog-button-primary:hover { background-color: #005a9e; border-color: #005a9e; }
 .dialog-button-secondary { background-color: var(--button-bg); color: var(--button-text-color); }
 .dialog-button-secondary:hover { background-color: var(--button-hover-bg); }
+
+#file-tree li.dragging > .tree-item-content { opacity: 0.5; border: 1px dashed var(--accent-color); }
+#file-tree li[data-is-directory="true"].drag-over > .tree-item-content, #file-tree-panel.drag-over-root { background-color: var(--hover-bg); outline: 1px solid var(--accent-color); outline-offset: -1px; }
+#file-tree li.dragging * { pointer-events: none; }
