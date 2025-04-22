@@ -7,8 +7,8 @@ const { spawn } = require('child_process');
 const http = require('http');
 const chokidar = require('chokidar');
 const WebSocket = require('ws');
-const mime = require('mime-types');
-
+const mime = require('mime-types');[
+let a = 3;    
 let mainWindow;
 const SUPPORTED_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico'];
 const SVG_EXTENSION = '.svg';
