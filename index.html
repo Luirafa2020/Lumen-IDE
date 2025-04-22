@@ -10,6 +10,47 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- === Custom Title Bar === -->
+    <div id="title-bar">
+        <div id="title-bar-menu">
+            <img id="app-icon" src="logo.png" alt="Lumen IDE Logo">
+            <span class="menu-item" data-menu="file">
+                Arquivo
+                <div class="menu-dropdown">
+                    <div class="menu-dropdown-item" data-action="new-file">Novo Arquivo<span class="shortcut">Ctrl+N</span></div>
+                    <div class="menu-dropdown-item" data-action="open-folder">Abrir Pasta<span class="shortcut">Ctrl+O</span></div>
+                    <div class="menu-dropdown-item" data-action="save">Salvar<span class="shortcut">Ctrl+S</span></div>
+                </div>
+            </span>
+            <span class="menu-item" data-menu="edit">
+                Editar
+                <div class="menu-dropdown">
+                    <div class="menu-dropdown-item" data-action="undo">Desfazer<span class="shortcut">Ctrl+Z</span></div>
+                    <div class="menu-dropdown-item" data-action="redo">Refazer<span class="shortcut">Ctrl+Y</span></div>
+                    <div class="menu-dropdown-separator"></div>
+                    <div class="menu-dropdown-item" data-action="cut">Recortar<span class="shortcut">Ctrl+X</span></div>
+                    <div class="menu-dropdown-item" data-action="copy">Copiar<span class="shortcut">Ctrl+C</span></div>
+                    <div class="menu-dropdown-item" data-action="paste">Colar<span class="shortcut">Ctrl+V</span></div>
+                </div>
+            </span>
+            <span class="menu-item" data-menu="view">
+                Visualizar
+                <div class="menu-dropdown">
+                    <div class="menu-dropdown-item" data-action="toggle-sidebar">Alternar Barra Lateral<span class="shortcut">Ctrl+B</span></div>
+                    <div class="menu-dropdown-item" data-action="toggle-terminal">Alternar Terminal<span class="shortcut">Ctrl+J</span></div>
+                </div>
+            </span>
+        </div>
+        <div id="title-bar-title">
+            Lumen IDE
+        </div>
+        <div id="title-bar-controls">
+            <button id="minimize-btn" title="Minimizar" aria-label="Minimizar"><i class="mdi mdi-window-minimize"></i></button>
+            <button id="maximize-btn" title="Maximizar" aria-label="Maximizar"><i class="mdi mdi-window-maximize"></i></button>
+            <button id="close-btn" title="Fechar" aria-label="Fechar"><i class="mdi mdi-window-close"></i></button>
+        </div>
+    </div>
+
     <div class="container">
         <!-- === Sidebar (Esquerda) === -->
         <div id="sidebar">

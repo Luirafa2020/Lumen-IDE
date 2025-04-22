@@ -203,3 +203,154 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font-family); ba
 #file-tree li.dragging > .tree-item-content { opacity: 0.5; border: 1px dashed var(--accent-color); }
 #file-tree li[data-is-directory="true"].drag-over > .tree-item-content, #file-tree-panel.drag-over-root { background-color: var(--hover-bg); outline: 1px solid var(--accent-color); outline-offset: -1px; }
 #file-tree li.dragging * { pointer-events: none; }
+/* === Custom Title Bar Styles === */
+#title-bar {
+    position: fixed; /* Keep it fixed at the top */
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 30px; /* Standard title bar height */
+    background-color: var(--sidebar-bg); /* Match sidebar or choose another */
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 5px 0 10px;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-app-region: drag; /* Make the bar draggable */
+    z-index: 100;
+}
+
+#app-icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+}
+
+#title-bar-menu {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    -webkit-app-region: no-drag; /* Allow clicking menu items */
+    padding-left: 0; /* Remove left padding for the first item */
+}
+
+#title-bar-menu .menu-item {
+    position: relative;
+    padding: 5px 8px;
+    font-size: 13px;
+    color: var(--text-secondary-color);
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+    -webkit-app-region: no-drag;
+}
+
+.menu-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 200px;
+    background-color: var(--sidebar-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    z-index: 1001;
+    display: none;
+    margin-top: 4px;
+    pointer-events: auto; /* Ensure dropdown is clickable */
+}
+
+.menu-item {
+    position: relative;
+}
+
+/* Show dropdown on hover and maintain visibility when hovering dropdown */
+.menu-item:hover .menu-dropdown {
+    display: block;
+}
+
+.menu-dropdown:hover {
+    display: block;
+}
+
+.menu-dropdown-item {
+    padding: 8px 15px;
+    font-size: 13px;
+    color: var(--text-color);
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background-color 0.2s;
+}
+
+.menu-dropdown-item:hover {
+    background-color: var(--hover-bg);
+}
+
+/* Ensure the menu stays visible while interacting with it */
+.menu-item.active .menu-dropdown {
+    display: block;
+}
+
+.menu-dropdown-separator {
+    height: 1px;
+    background-color: var(--border-color);
+    margin: 5px 0;
+    padding: 0;
+}
+
+#title-bar-title {
+    flex-grow: 1;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-secondary-color);
+    pointer-events: none; /* Don't interfere with drag */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 20px;
+}
+
+#title-bar-controls {
+    display: flex;
+    align-items: center;
+    -webkit-app-region: no-drag; /* Allow clicking controls */
+}
+
+#title-bar-controls button {
+    background: none;
+    border: none;
+    color: var(--text-secondary-color);
+    padding: 5px 8px;
+    font-size: 16px; /* MDI icon size */
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+#title-bar-controls button:hover {
+    background-color: var(--hover-bg);
+    color: var(--text-color);
+}
+
+#title-bar-controls #close-btn:hover {
+    background-color: #e81123; /* Standard Windows close hover */
+    color: white;
+}
+
+/* Adjust main container */
+.container {
+    /* Remove fixed height and use margin */
+    height: calc(100vh - 30px); /* Subtract title bar height */
+    margin-top: 30px; /* Push container below title bar */
+}
+
+/* Ensure body doesn't scroll */
+body {
+    overflow: hidden;
+}

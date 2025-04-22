@@ -26,6 +26,7 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1400,
         height: 900,
+        frame: false, // Add this line to remove the standard frame
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
@@ -41,6 +42,18 @@ function createWindow() {
         if (liveHttpServer) {
             console.log("Window closing, stopping live server...");
             await stopLiveServer();
+        }
+    });
+
+    // Listen for maximize/unmaximize events to notify renderer
+    mainWindow.on('maximize', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('window:maximized');
+        }
+    });
+    mainWindow.on('unmaximize', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('window:unmaximized');
         }
     });
 }
@@ -381,8 +394,29 @@ ipcMain.handle('live-server:getStatus', () => {
 });
 
 app.whenReady().then(() => {
-    createWindow();
+    createWindow(); // Ensure createMenu() is not called here
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+
+    // === IPC Listeners for Custom Window Controls ===
+    ipcMain.on('window:minimize', () => {
+        if (mainWindow) mainWindow.minimize();
+    });
+
+    ipcMain.on('window:maximize', () => {
+        if (mainWindow) {
+            if (mainWindow.isMaximized()) {
+                mainWindow.unmaximize();
+            } else {
+                mainWindow.maximize();
+            }
+        }
+    });
+
+    ipcMain.on('window:close', () => {
+        if (mainWindow) mainWindow.close();
+    });
+    // =============================================
+
 });
 
 app.on('window-all-closed', () => {

@@ -334,6 +334,62 @@ async function saveFile(filePathToSave = activeFilePath) {
     }
 }
 
+async function saveFileAs() {
+    if (!activeFilePath) return false;
+    const fileState = openFiles.get(activeFilePath);
+    if (!fileState) { 
+        showNativeErrorDialog('Erro ao Salvar', 'Nenhum arquivo aberto para salvar.'); 
+        return false; 
+    }
+    if (fileState.fileType === 'image' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'rendered')) {
+        showNativeErrorDialog('Erro ao Salvar', 'Não é possível salvar imagens no modo de visualização.');
+        return false;
+    }
+
+    try {
+        const result = await window.electronAPI.showSaveDialog({
+            defaultPath: activeFilePath,
+            filters: [
+                { name: 'Todos os Arquivos', extensions: ['*'] }
+            ]
+        });
+
+        if (result.canceled || !result.filePath) {
+            console.log('Operação "Salvar Como" cancelada pelo usuário');
+            return false;
+        }
+
+        const newPath = result.filePath;
+        const model = editorModels.get(activeFilePath);
+        if (!model) {
+            showNativeErrorDialog('Erro ao Salvar', 'Modelo do editor não encontrado.');
+            return false;
+        }
+
+        const currentContent = model.getValue();
+        saveStatusElement.textContent = 'Salvando...';
+
+        const writeResult = await window.electronAPI.writeFile(newPath, currentContent);
+        if (writeResult.error) throw new Error(writeResult.error);
+
+        // Se o arquivo foi salvo com sucesso, atualizamos o estado
+        await updateStateForRename(activeFilePath, newPath);
+        saveStatusElement.textContent = 'Salvo!';
+        setTimeout(() => {
+            if (activeFilePath === newPath && !openFiles.get(newPath)?.isDirty) {
+                saveStatusElement.textContent = '';
+            }
+        }, 2000);
+
+        return true;
+    } catch (error) {
+        console.error('Erro ao salvar como:', error);
+        showNativeErrorDialog('Erro ao Salvar Como', `Não foi possível salvar o arquivo: ${error.message}`);
+        saveStatusElement.textContent = 'Erro ao salvar!';
+        return false;
+    }
+}
+
 let draggedItemPath = null;
 
 function handleDragStartLogic(event, path, targetElement) {
@@ -1314,3 +1370,145 @@ document.addEventListener('DOMContentLoaded', async () => {
         try { document.body.innerHTML = errorHtml; } catch { console.error("Falha ao exibir erro na UI:\n" + errorHtml); }
     }
 });
+// === Custom Title Bar Logic ===
+    const minimizeBtn = document.getElementById('minimize-btn');
+    const maximizeBtn = document.getElementById('maximize-btn');
+    const closeBtn = document.getElementById('close-btn');
+
+    if (minimizeBtn) {
+        minimizeBtn.addEventListener('click', () => {
+            window.electronAPI.windowMinimize();
+        });
+    }
+
+    if (maximizeBtn) {
+        maximizeBtn.addEventListener('click', () => {
+            window.electronAPI.windowMaximize(); // This will toggle maximize/restore in main.js
+        });
+    }
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            window.electronAPI.windowClose();
+        });
+    }
+
+    // Listen for maximize/unmaximize events from the main process to update the button icon
+    window.electronAPI.onWindowMaximized(() => {
+        if (maximizeBtn) {
+            maximizeBtn.title = 'Restaurar';
+            maximizeBtn.setAttribute('aria-label', 'Restaurar');
+            const icon = maximizeBtn.querySelector('i');
+            if (icon) {
+                icon.classList.remove('mdi-window-maximize');
+                icon.classList.add('mdi-window-restore');
+            }
+        }
+    });
+
+    window.electronAPI.onWindowUnmaximized(() => {
+        if (maximizeBtn) {
+            maximizeBtn.title = 'Maximizar';
+            maximizeBtn.setAttribute('aria-label', 'Maximizar');
+            const icon = maximizeBtn.querySelector('i');
+            if (icon) {
+                icon.classList.remove('mdi-window-restore');
+                icon.classList.add('mdi-window-maximize');
+            }
+        }
+    });
+    // === End Custom Title Bar Logic ===
+
+// Title bar menu handling
+document.querySelectorAll('.menu-item').forEach(menuItem => {
+    menuItem.addEventListener('mouseenter', () => {
+        // Close other open menus
+        document.querySelectorAll('.menu-item').forEach(item => {
+            if (item !== menuItem) {
+                item.classList.remove('active');
+            }
+        });
+        menuItem.classList.add('active');
+    });
+});
+
+// Handle dropdown menu item clicks
+document.querySelectorAll('.menu-dropdown-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = item.dataset.action;
+        handleMenuAction(action);
+    });
+});
+
+// Close menus when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.menu-item')) {
+        document.querySelectorAll('.menu-item').forEach(item => {
+            item.classList.remove('active');
+        });
+    }
+});
+
+function handleMenuAction(action) {
+    switch(action) {
+        case 'new-file':
+            if (currentFolderPath) {
+                handleContextMenuCommand('new-file', currentFolderPath);
+            }
+            break;
+        case 'open-folder':
+            openFolderBtn.click();
+            break;
+        case 'save':
+            saveFile();
+            break;
+        case 'save-as':
+            saveFileAs();
+            break;
+        case 'undo':
+            if (editor && !editor.getOption(monaco.editor.EditorOption.readOnly)) {
+                editor.trigger('keyboard', 'undo', null);
+            }
+            break;
+        case 'redo':
+            if (editor && !editor.getOption(monaco.editor.EditorOption.readOnly)) {
+                editor.trigger('keyboard', 'redo', null);
+            }
+            break;
+        case 'cut':
+            if (editor && !editor.getOption(monaco.editor.EditorOption.readOnly)) {
+                editor.trigger('keyboard', 'cut', null);
+            }
+            break;
+        case 'copy':
+            if (editor) {
+                editor.trigger('keyboard', 'copy', null);
+            }
+            break;
+        case 'paste':
+            if (editor && !editor.getOption(monaco.editor.EditorOption.readOnly)) {
+                editor.trigger('keyboard', 'paste', null);
+            }
+            break;
+        case 'toggle-sidebar':
+            const sidebarStyle = getComputedStyle(sidebar);
+            if (sidebarStyle.display === 'none') {
+                sidebar.style.display = 'flex';
+            } else {
+                sidebar.style.display = 'none';
+            }
+            if (editor) editor.layout();
+            break;
+        case 'toggle-terminal':
+            toggleCommandPanel();
+            break;
+        case 'toggle-problems':
+            showSidebarPanel('problems-panel');
+            break;
+    }
+    // Close all menus after action
+    document.querySelectorAll('.menu-item').forEach(item => {
+        item.classList.remove('active');
+    });
+}

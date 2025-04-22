@@ -28,4 +28,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onLiveServerStatusUpdate: (callback) => ipcRenderer.on('live-server:statusUpdate', (_event, status) => callback(status)),
 
     writeToClipboard: (text) => ipcRenderer.invoke('clipboard:writeText', text),
+
+    // Window Controls
+    windowMinimize: () => ipcRenderer.send('window:minimize'),
+    windowMaximize: () => ipcRenderer.send('window:maximize'), // Will toggle maximize/restore
+    windowClose: () => ipcRenderer.send('window:close'),
+    // Listeners for state changes from main process
+    onWindowMaximized: (callback) => ipcRenderer.on('window:maximized', (_event) => callback(true)),
+    onWindowUnmaximized: (callback) => ipcRenderer.on('window:unmaximized', (_event) => callback(false)),
 });
