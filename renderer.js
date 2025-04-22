@@ -805,6 +805,7 @@ async function handleContextMenuCommand(command, targetPath) {
     }
 }
 
+
 async function updateStateForRename(oldPath, newPath) {
     const isDirectory = !(oldPath.includes('.') || newPath.includes('.'));
     console.log(`Updating state for rename/move: ${oldPath} -> ${newPath}`);
@@ -1346,6 +1347,42 @@ window.addEventListener('keydown', (e) => {
     } else if (isCtrlOrMeta && key === 'j') {
         e.preventDefault();
         handleMenuAction('toggle-terminal');
+    } else if (isCtrlOrMeta && key === 'n') {
+        e.preventDefault();
+        if (!currentFolderPath) {
+            showNativeErrorDialog('Erro', 'Abra uma pasta primeiro para criar um arquivo.');
+            return;
+        }
+        let targetDir = currentFolderPath;
+        const selectedItem = fileTreeElement.querySelector('li.selected');
+        if (selectedItem) {
+            const selectedPath = selectedItem.dataset.filePath;
+            const isDir = selectedItem.dataset.isDirectory === 'true';
+            if (isDir) {
+                targetDir = selectedPath;
+            } else if (selectedPath && selectedPath.includes(pathSeparator)) {
+                targetDir = selectedPath.substring(0, selectedPath.lastIndexOf(pathSeparator));
+            }
+        }
+        handleContextMenuCommand('new-file', targetDir || currentFolderPath);
+    } else if (isCtrlOrMeta && isShift && key === 'n') {
+        e.preventDefault();
+         if (!currentFolderPath) {
+            showNativeErrorDialog('Erro', 'Abra uma pasta primeiro para criar uma pasta.');
+            return;
+        }
+        let targetDir = currentFolderPath;
+        const selectedItem = fileTreeElement.querySelector('li.selected');
+        if (selectedItem) {
+            const selectedPath = selectedItem.dataset.filePath;
+            const isDir = selectedItem.dataset.isDirectory === 'true';
+            if (isDir) {
+                targetDir = selectedPath;
+            } else if (selectedPath && selectedPath.includes(pathSeparator)) {
+                targetDir = selectedPath.substring(0, selectedPath.lastIndexOf(pathSeparator));
+            }
+        }
+        handleContextMenuCommand('new-folder', targetDir || currentFolderPath);
     } else if (key === 'escape') {
         if (inputDialogOverlay.style.display === 'flex') {
         } else if (confirmDialogOverlay.style.display === 'flex') {
@@ -1482,7 +1519,20 @@ function handleMenuAction(action) {
     switch(action) {
         case 'new-file':
             if (currentFolderPath) {
-                handleContextMenuCommand('new-file', currentFolderPath);
+                 let targetDir = currentFolderPath;
+                 const selectedItem = fileTreeElement.querySelector('li.selected');
+                 if (selectedItem) {
+                     const selectedPath = selectedItem.dataset.filePath;
+                     const isDir = selectedItem.dataset.isDirectory === 'true';
+                     if (isDir) {
+                         targetDir = selectedPath;
+                     } else if (selectedPath && selectedPath.includes(pathSeparator)) {
+                         targetDir = selectedPath.substring(0, selectedPath.lastIndexOf(pathSeparator));
+                     }
+                 }
+                 handleContextMenuCommand('new-file', targetDir || currentFolderPath);
+            } else {
+                 showNativeErrorDialog('Erro', 'Abra uma pasta primeiro para criar um arquivo.');
             }
             break;
         case 'open-folder':
