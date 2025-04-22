@@ -337,9 +337,9 @@ async function saveFile(filePathToSave = activeFilePath) {
 async function saveFileAs() {
     if (!activeFilePath) return false;
     const fileState = openFiles.get(activeFilePath);
-    if (!fileState) { 
-        showNativeErrorDialog('Erro ao Salvar', 'Nenhum arquivo aberto para salvar.'); 
-        return false; 
+    if (!fileState) {
+        showNativeErrorDialog('Erro ao Salvar', 'Nenhum arquivo aberto para salvar.');
+        return false;
     }
     if (fileState.fileType === 'image' || (fileState.fileType === 'svg' && fileState.svgViewMode === 'rendered')) {
         showNativeErrorDialog('Erro ao Salvar', 'Não é possível salvar imagens no modo de visualização.');
@@ -372,7 +372,6 @@ async function saveFileAs() {
         const writeResult = await window.electronAPI.writeFile(newPath, currentContent);
         if (writeResult.error) throw new Error(writeResult.error);
 
-        // Se o arquivo foi salvo com sucesso, atualizamos o estado
         await updateStateForRename(activeFilePath, newPath);
         saveStatusElement.textContent = 'Salvo!';
         setTimeout(() => {
@@ -806,7 +805,6 @@ async function handleContextMenuCommand(command, targetPath) {
     }
 }
 
-
 async function updateStateForRename(oldPath, newPath) {
     const isDirectory = !(oldPath.includes('.') || newPath.includes('.'));
     console.log(`Updating state for rename/move: ${oldPath} -> ${newPath}`);
@@ -1157,7 +1155,6 @@ function updateProblemsForModel(modelUri) {
     return false;
 }
 
-
 function renderProblemsPanel() {
     if (!problemsListElement || !problemsStatusElement || !problemsCountBadge) return;
 
@@ -1317,10 +1314,48 @@ openFolderBtn.addEventListener('click', async () => { try { const folderPath = a
 fileTreeElement.addEventListener('contextmenu', (e) => { if (e.target === fileTreeElement) { e.preventDefault(); e.stopPropagation(); showContextMenu(e, 'tree-empty', { path: currentFolderPath, isDirectory: true }); } });
 newFileBtn.addEventListener('click', () => { if(!newFileBtn.disabled) handleContextMenuCommand('new-file', currentFolderPath); });
 newFolderBtn.addEventListener('click', () => { if(!newFolderBtn.disabled) handleContextMenuCommand('new-folder', currentFolderPath); });
-window.addEventListener('keydown', (e) => { const isCtrlOrMeta = e.ctrlKey || e.metaKey; if (isCtrlOrMeta && e.key === 's') { e.preventDefault(); saveFile(); } else if (isCtrlOrMeta && e.key === 'o') { e.preventDefault(); openFolderBtn.click(); } else if (isCtrlOrMeta && e.key === '`') { e.preventDefault(); toggleCommandPanel(); } else if (isCtrlOrMeta && e.key === 'w') { e.preventDefault(); if (activeFilePath) closeFile(activeFilePath); } else if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); showSidebarPanel('search-panel'); } else if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); showSidebarPanel('file-tree-panel');
-    } else if (isCtrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'm') {
-         e.preventDefault(); showSidebarPanel('problems-panel');
-    } else if (e.key === 'Escape') { if (inputDialogOverlay.style.display === 'flex') {} else if (confirmDialogOverlay.style.display === 'flex') {} else if (contextMenuElement.style.display === 'block') { hideContextMenu(); } else if (isCommandPanelVisible) { hideCommandPanel(); } } });
+window.addEventListener('keydown', (e) => {
+    const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+    const isShift = e.shiftKey;
+    const key = e.key.toLowerCase();
+
+    if (isCtrlOrMeta && key === 's') {
+        e.preventDefault();
+        saveFile();
+    } else if (isCtrlOrMeta && key === 'o') {
+        e.preventDefault();
+        openFolderBtn.click();
+    } else if (isCtrlOrMeta && key === '`') {
+        e.preventDefault();
+        toggleCommandPanel();
+    } else if (isCtrlOrMeta && key === 'w') {
+        e.preventDefault();
+        if (activeFilePath) closeFile(activeFilePath);
+    } else if (isCtrlOrMeta && isShift && key === 'f') {
+        e.preventDefault();
+        showSidebarPanel('search-panel');
+    } else if (isCtrlOrMeta && isShift && key === 'e') {
+        e.preventDefault();
+        showSidebarPanel('file-tree-panel');
+    } else if (isCtrlOrMeta && isShift && key === 'm') {
+        e.preventDefault();
+        showSidebarPanel('problems-panel');
+    } else if (isCtrlOrMeta && key === 'b') {
+        e.preventDefault();
+        handleMenuAction('toggle-sidebar');
+    } else if (isCtrlOrMeta && key === 'j') {
+        e.preventDefault();
+        handleMenuAction('toggle-terminal');
+    } else if (key === 'escape') {
+        if (inputDialogOverlay.style.display === 'flex') {
+        } else if (confirmDialogOverlay.style.display === 'flex') {
+        } else if (contextMenuElement.style.display === 'block') {
+            hideContextMenu();
+        } else if (isCommandPanelVisible) {
+            hideCommandPanel();
+        }
+    }
+});
 sidebarTabButtons.forEach(button => button.addEventListener('click', () => showSidebarPanel(button.dataset.target)));
 searchButton.addEventListener('click', performSearch);
 searchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') performSearch(); });
@@ -1370,7 +1405,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         try { document.body.innerHTML = errorHtml; } catch { console.error("Falha ao exibir erro na UI:\n" + errorHtml); }
     }
 });
-// === Custom Title Bar Logic ===
     const minimizeBtn = document.getElementById('minimize-btn');
     const maximizeBtn = document.getElementById('maximize-btn');
     const closeBtn = document.getElementById('close-btn');
@@ -1383,7 +1417,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (maximizeBtn) {
         maximizeBtn.addEventListener('click', () => {
-            window.electronAPI.windowMaximize(); // This will toggle maximize/restore in main.js
+            window.electronAPI.windowMaximize();
         });
     }
 
@@ -1393,7 +1427,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Listen for maximize/unmaximize events from the main process to update the button icon
     window.electronAPI.onWindowMaximized(() => {
         if (maximizeBtn) {
             maximizeBtn.title = 'Restaurar';
@@ -1417,12 +1450,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
     });
-    // === End Custom Title Bar Logic ===
 
-// Title bar menu handling
 document.querySelectorAll('.menu-item').forEach(menuItem => {
     menuItem.addEventListener('mouseenter', () => {
-        // Close other open menus
         document.querySelectorAll('.menu-item').forEach(item => {
             if (item !== menuItem) {
                 item.classList.remove('active');
@@ -1432,7 +1462,6 @@ document.querySelectorAll('.menu-item').forEach(menuItem => {
     });
 });
 
-// Handle dropdown menu item clicks
 document.querySelectorAll('.menu-dropdown-item').forEach(item => {
     item.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1441,7 +1470,6 @@ document.querySelectorAll('.menu-dropdown-item').forEach(item => {
     });
 });
 
-// Close menus when clicking outside
 document.addEventListener('click', (e) => {
     if (!e.target.closest('.menu-item')) {
         document.querySelectorAll('.menu-item').forEach(item => {
@@ -1492,11 +1520,11 @@ function handleMenuAction(action) {
             }
             break;
         case 'toggle-sidebar':
-            const sidebarStyle = getComputedStyle(sidebar);
+            const sidebarStyle = getComputedStyle(sidebarElement);
             if (sidebarStyle.display === 'none') {
-                sidebar.style.display = 'flex';
+                sidebarElement.style.display = 'flex';
             } else {
-                sidebar.style.display = 'none';
+                sidebarElement.style.display = 'none';
             }
             if (editor) editor.layout();
             break;
@@ -1507,7 +1535,6 @@ function handleMenuAction(action) {
             showSidebarPanel('problems-panel');
             break;
     }
-    // Close all menus after action
     document.querySelectorAll('.menu-item').forEach(item => {
         item.classList.remove('active');
     });
